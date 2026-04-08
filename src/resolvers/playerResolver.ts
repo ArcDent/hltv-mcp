@@ -1,7 +1,7 @@
 import type { ResolvedPlayerEntity } from "../types/hltv.js";
 import type { HltvApiClient } from "../clients/hltvApiClient.js";
-import { asRecord, pickNumber, pickString } from "../utils/object.js";
-import { equalsIgnoreCase, includesIgnoreCase } from "../utils/strings.js";
+import { asRecord, pickArray, pickNumber, pickString } from "../utils/object.js";
+import { equalsIgnoreCase, includesIgnoreCase, parseHltvEntityLink } from "../utils/strings.js";
 
 const PLAYER_ALIAS_DICTIONARY: Record<string, string[]> = {
   monesy: ["m0NESY"],
@@ -36,13 +36,18 @@ export class PlayerResolver {
       return undefined;
     }
 
-    const id = pickNumber(record, ["id", "player_id", "playerId"]);
-    const name = pickString(record, ["name", "player_name", "playerName", "player"]);
+    const link = pickString(record, ["profile_link", "link", "href", "url"]);
+    const parsedLink = parseHltvEntityLink(link, "player");
+    const id = pickNumber(record, ["id", "player_id", "playerId"]) ?? parsedLink.id;
+    const name = pickString(record, ["name", "player_name", "playerName", "player", "nick"]);
     if (!id || !name) {
       return undefined;
     }
 
-    const team = pickString(record, ["team", "team_name", "teamName", "current_team"]);
+    const teamArray = pickArray(record, ["team"]);
+    const team =
+      pickString(record, ["team", "team_name", "teamName", "current_team"]) ??
+      teamArray?.find((item): item is string => typeof item === "string" && item.trim().length > 0);
     const country = pickString(record, ["country", "country_code", "countryCode"]);
     const score = this.scoreMatch(name, originalQuery);
 
@@ -50,7 +55,7 @@ export class PlayerResolver {
       type: "player",
       id,
       name,
-      slug: this.client.buildSlug(name, id),
+      slug: parsedLink.slug ?? this.client.buildSlug(name, id),
       team,
       country,
       score,

@@ -185,10 +185,19 @@ export class ChineseRenderer {
   }
 
   private renderError(title: string, response: ToolResponse): string {
+    const details = response.error?.details;
+    const detailLines = [
+      typeof details?.path === "string" ? `- 上游路径：${details.path}` : undefined,
+      details?.status !== undefined ? `- 上游状态码：${details.status}` : undefined,
+      typeof details?.team_name === "string" ? `- 队伍参数：${details.team_name}` : undefined,
+      typeof details?.player_name === "string" ? `- 选手参数：${details.player_name}` : undefined
+    ].filter(Boolean);
+
     return [
       `【${title}】`,
       `请求失败：${response.error?.code ?? "UNKNOWN"}`,
       response.error?.message ?? "未知错误",
+      ...detailLines,
       response.meta.stale ? "已尝试使用缓存回退。" : "",
       `【更新时间】${formatDateTime(response.meta.fetched_at, response.meta.timezone)}`,
       `【来源】${response.meta.source}`

@@ -6,6 +6,52 @@ export function slugify(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+export function parseHltvEntityLink(
+  link: string | undefined,
+  entityType: "team" | "player"
+): {
+  id?: number;
+  slug?: string;
+  path?: string;
+} {
+  if (!link) {
+    return {};
+  }
+
+  let normalized = link.trim();
+
+  try {
+    if (/^https?:\/\//i.test(normalized)) {
+      normalized = new URL(normalized).pathname;
+    }
+  } catch {
+    return {};
+  }
+
+  const match = normalized.match(new RegExp(`/${entityType}/(\\d+)/([^/?#]+)`, "i"));
+  if (!match) {
+    return {};
+  }
+
+  const id = Number(match[1]);
+  if (!Number.isFinite(id)) {
+    return {};
+  }
+
+  let slug = match[2];
+  try {
+    slug = decodeURIComponent(slug);
+  } catch {
+    // Ignore decode failures and keep the raw slug.
+  }
+
+  return {
+    id,
+    slug,
+    path: match[0]
+  };
+}
+
 export function includesIgnoreCase(source: string | undefined, needle: string | undefined): boolean {
   if (!source || !needle) {
     return false;

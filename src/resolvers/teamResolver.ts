@@ -1,7 +1,7 @@
 import type { ResolvedTeamEntity } from "../types/hltv.js";
 import type { HltvApiClient } from "../clients/hltvApiClient.js";
 import { asRecord, pickNumber, pickString } from "../utils/object.js";
-import { equalsIgnoreCase, includesIgnoreCase } from "../utils/strings.js";
+import { equalsIgnoreCase, includesIgnoreCase, parseHltvEntityLink } from "../utils/strings.js";
 
 const TEAM_ALIAS_DICTIONARY: Record<string, string[]> = {
   navi: ["Natus Vincere", "NaVi"],
@@ -39,7 +39,9 @@ export class TeamResolver {
       return undefined;
     }
 
-    const id = pickNumber(record, ["id", "team_id", "teamId"]);
+    const link = pickString(record, ["link", "profile_link", "href", "url"]);
+    const parsedLink = parseHltvEntityLink(link, "team");
+    const id = pickNumber(record, ["id", "team_id", "teamId"]) ?? parsedLink.id;
     const name = pickString(record, ["name", "team_name", "teamName", "team"]);
     if (!id || !name) {
       return undefined;
@@ -53,7 +55,7 @@ export class TeamResolver {
       type: "team",
       id,
       name,
-      slug: this.client.buildSlug(name, id),
+      slug: parsedLink.slug ?? this.client.buildSlug(name, id),
       country,
       rank,
       score,

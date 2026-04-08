@@ -6,8 +6,86 @@ import type {
   ResolvedTeamEntity,
   TeamProfile
 } from "../types/hltv.js";
-import { asRecord, compact, pickArray, pickNumber, pickString } from "../utils/object.js";
+import { asRecord, compact, pickArray, pickNumber, pickString, pickValue } from "../utils/object.js";
 import { normalizeDateTime } from "../utils/time.js";
+
+function parseLooseNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().match(/-?\d+(?:\.\d+)?/);
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed = Number(normalized[0]);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+function pickLooseNumber(record: Record<string, unknown>, paths: string[]): number | undefined {
+  for (const path of paths) {
+    const parsed = parseLooseNumber(pickValue(record, [path]));
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}
+
+function firstString(items: unknown[] | undefined): string | undefined {
+  for (const item of items ?? []) {
+    if (typeof item === "string" && item.trim().length > 0) {
+      return item.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function listToText(value: unknown, separator = ", "): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const values = value
+    .map((item) => {
+      if (typeof item === "string") {
+        return item.trim();
+      }
+
+      if (typeof item === "number" && Number.isFinite(item)) {
+        return String(item);
+      }
+
+      return undefined;
+    })
+    .filter((item): item is string => Boolean(item));
+
+  return values.length ? values.join(separator) : undefined;
+}
+
+function pickText(record: Record<string, unknown>, paths: string[], separator = ", "): string | undefined {
+  const direct = pickString(record, paths);
+  if (direct) {
+    return direct;
+  }
+
+  for (const path of paths) {
+    const value = pickValue(record, [path]);
+    const listText = listToText(value, separator);
+    if (listText) {
+      return listText;
+    }
+  }
+
+  return undefined;
+}
 
 function parseScore(record: Record<string, unknown>): string | undefined {
   const direct = pickString(record, ["score", "result", "scoreline"]);
@@ -15,8 +93,13 @@ function parseScore(record: Record<string, unknown>): string | undefined {
     return direct;
   }
 
-  const left = pickNumber(record, ["team1_score", "team1Score", "left_score", "leftScore"]);
-  const right = pickNumber(record, ["team2_score", "team2Score", "right_score", "rightScore"]);
+  const scoreList = listToText(pickValue(record, ["score", "result", "scoreline"]), ":");
+  if (scoreList) {
+    return scoreList;
+  }
+
+  const left = pickLooseNumber(record, ["team1_score", "team1Score", "left_score", "leftScore"]);
+  const right = pickLooseNumber(record, ["team2_score", "team2Score", "right_score", "rightScore"]);
 
   if (left !== undefined && right !== undefined) {
     return `${left}:${right}`;
@@ -42,8 +125,8 @@ function parseOutcome(record: Record<string, unknown>, perspective?: string): No
 
   const team1 = pickString(record, ["team1", "team1_name", "team1.name", "team1Name"]);
   const team2 = pickString(record, ["team2", "team2_name", "team2.name", "team2Name"]);
-  const team1Score = pickNumber(record, ["team1_score", "team1Score"]);
-  const team2Score = pickNumber(record, ["team2_score", "team2Score"]);
+  const team1Score = pickLooseNumber(record, ["team1_score", "team1Score"]);
+  const team2Score = pickLooseNumber(record, ["team2_score", "team2Score"]);
 
   if (!perspective || team1Score === undefined || team2Score === undefined) {
     return undefined;
@@ -83,8 +166,10 @@ export function normalizeTeamProfile(
     id: pickNumber(record, ["id", "team_id", "teamId"]) ?? fallback.id,
     name: pickString(record, ["name", "team_name", "teamName", "team"]) ?? fallback.name,
     slug: fallback.slug,
-    country: pickString(record, ["country", "country_code", "countryCode"]) ?? fallback.country,
-    rank: pickNumber(record, ["rank", "world_rank", "worldRank"]) ?? fallback.rank,
+    country:
+      pickString(record, ["country", "country_code", "countryCode", "country.name", "country.code"]) ??
+      fallback.country,
+    rank: pickLooseNumber(record, ["rank", "world_rank", "worldRank", "ranking"]) ?? fallback.rank,
     raw_summary: pickString(record, ["summary", "description"])
   };
 }
@@ -106,11 +191,16 @@ export function normalizePlayerProfile(
 
   return {
     id: pickNumber(record, ["id", "player_id", "playerId"]) ?? fallback.id,
-    name: pickString(record, ["name", "player_name", "playerName", "player"]) ?? fallback.name,
+    name: pickString(record, ["name", "player_name", "playerName", "player", "nick"]) ?? fallback.name,
     slug: fallback.slug,
-    team: pickString(record, ["team", "team_name", "teamName", "current_team"]) ?? fallback.team,
-    country: pickString(record, ["country", "country_code", "countryCode"]) ?? fallback.country,
-    raw_summary: pickString(record, ["summary", "description"])
+    team:
+      pickString(record, ["team", "team_name", "teamName", "current_team", "team.name"]) ??
+      firstString(pickArray(record, ["team"])) ??
+      fallback.team,
+    country:
+      pickString(record, ["country", "country_code", "countryCode", "country.name", "flag"]) ??
+      fallback.country,
+    raw_summary: pickString(record, ["summary", "description", "bio"])
   };
 }
 
@@ -120,24 +210,33 @@ export function normalizeOverview(raw: unknown): Record<string, string | number>
     return {};
   }
 
-  const keys = [
-    "rating",
-    "maps",
-    "maps_played",
-    "kills",
-    "deaths",
-    "kd_diff",
-    "headshots",
-    "adr",
-    "kast",
-    "impact"
-  ];
+  const containers = compact([
+    record,
+    asRecord(record.summary),
+    asRecord(record.player_statistics),
+    asRecord(record.role_stats),
+    asRecord(record.stats)
+  ]);
+
+  const keyMap: Record<string, string[]> = {
+    rating: ["rating", "rating_2.0", "rating2"],
+    maps: ["maps", "maps_played"],
+    kills: ["kills", "total_kills"],
+    deaths: ["deaths", "total_deaths"],
+    kd_diff: ["kd_diff", "kill_death_difference"],
+    headshots: ["headshots", "headshot_percentage", "hs"],
+    adr: ["adr"],
+    kast: ["kast"],
+    impact: ["impact"]
+  };
 
   const entries = compact(
-    keys.map((key) => {
-      const rawValue = record[key];
-      if (typeof rawValue === "number" || typeof rawValue === "string") {
-        return [key, rawValue] as const;
+    Object.entries(keyMap).map(([normalizedKey, paths]) => {
+      for (const container of containers) {
+        const rawValue = pickValue(container, paths);
+        if (typeof rawValue === "number" || typeof rawValue === "string") {
+          return [normalizedKey, typeof rawValue === "string" ? rawValue.trim() : rawValue] as const;
+        }
       }
 
       return undefined;
@@ -174,14 +273,14 @@ export function normalizeMatches(rawItems: unknown[], perspective?: string): Nor
         team1,
         team2,
         opponent,
-        event: pickString(record, ["event", "event_name", "eventName", "event.name"]),
+        event: pickString(record, ["event", "event_name", "eventName", "event.name", "event_title"]),
         result: score || playedAt ? result ?? "unknown" : "scheduled",
         score,
-        winner: pickString(record, ["winner", "winner_name", "winnerName"]),
+        winner: pickString(record, ["winner", "winner_name", "winnerName", "winner.name"]),
         best_of: pickString(record, ["best_of", "bestOf", "format"]),
-        played_at: score ? playedAt : undefined,
-        scheduled_at: score ? undefined : scheduled,
-        map_text: pickString(record, ["map", "maps", "map_text", "mapText"])
+        played_at: score || playedAt ? playedAt : undefined,
+        scheduled_at: score || playedAt ? undefined : scheduled,
+        map_text: pickText(record, ["map", "maps", "map_text", "mapText"])
       };
     })
   );
@@ -239,10 +338,10 @@ export function normalizeNews(rawItems: unknown[]): NewsItem[] {
 
 export function collectRecentHighlights(rawPlayer: unknown, rawOverview: unknown): string[] {
   const playerRecord = asRecord(rawPlayer);
-  const overviewRecord = asRecord(rawOverview);
+  const normalizedOverview = normalizeOverview(rawOverview);
   const notes = new Set<string>();
 
-  const achievements = playerRecord ? pickArray(playerRecord, ["achievements", "highlights"]) : undefined;
+  const achievements = playerRecord ? pickArray(playerRecord, ["achievements", "highlights", "trophies"]) : undefined;
   for (const item of achievements ?? []) {
     if (typeof item === "string") {
       notes.add(item);
@@ -255,8 +354,8 @@ export function collectRecentHighlights(rawPlayer: unknown, rawOverview: unknown
     }
   }
 
-  const rating = overviewRecord ? pickString(overviewRecord, ["rating"]) : undefined;
-  if (rating) {
+  const rating = normalizedOverview.rating;
+  if (rating !== undefined) {
     notes.add(`近期 rating: ${rating}`);
   }
 

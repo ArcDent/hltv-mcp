@@ -290,26 +290,50 @@ export class HltvFacade {
     teamName: string | undefined,
     exact = false
   ): Promise<ResolvedTeamEntity> {
-    if (teamId && teamName) {
-      return {
-        type: "team",
-        id: teamId,
-        name: teamName,
-        slug: this.client.buildSlug(teamName, teamId)
-      };
-    }
-
     if (!teamName) {
-      throw new AppError("INVALID_ARGUMENT", "team_name or team_id is required", {
-        retryable: false
+      throw new AppError("INVALID_ARGUMENT", "team_name is required to resolve canonical team slug", {
+        retryable: false,
+        details: {
+          team_id: teamId,
+          team_name: teamName
+        }
       });
     }
 
-    const candidates = await this.teamResolver.resolve(teamName, exact, 5);
+    const candidates = await this.teamResolver.resolve(teamName, exact, 10);
     if (!candidates.length) {
       throw new AppError("ENTITY_NOT_FOUND", `No team matched '${teamName}'`, {
-        retryable: false
+        retryable: false,
+        details: {
+          team_id: teamId,
+          team_name: teamName,
+          exact
+        }
       });
+    }
+
+    if (teamId) {
+      const matchedCandidate = candidates.find((candidate) => candidate.id === teamId);
+      if (matchedCandidate) {
+        return matchedCandidate;
+      }
+
+      throw new AppError(
+        "ENTITY_NOT_FOUND",
+        `Unable to resolve canonical team slug for '${teamName}' with team_id=${teamId}`,
+        {
+          retryable: false,
+          details: {
+            team_id: teamId,
+            team_name: teamName,
+            candidates: candidates.slice(0, 3).map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              slug: candidate.slug
+            }))
+          }
+        }
+      );
     }
 
     return candidates[0];
@@ -320,26 +344,50 @@ export class HltvFacade {
     playerName: string | undefined,
     exact = false
   ): Promise<ResolvedPlayerEntity> {
-    if (playerId && playerName) {
-      return {
-        type: "player",
-        id: playerId,
-        name: playerName,
-        slug: this.client.buildSlug(playerName, playerId)
-      };
-    }
-
     if (!playerName) {
-      throw new AppError("INVALID_ARGUMENT", "player_name or player_id is required", {
-        retryable: false
+      throw new AppError("INVALID_ARGUMENT", "player_name is required to resolve canonical player slug", {
+        retryable: false,
+        details: {
+          player_id: playerId,
+          player_name: playerName
+        }
       });
     }
 
-    const candidates = await this.playerResolver.resolve(playerName, exact, 5);
+    const candidates = await this.playerResolver.resolve(playerName, exact, 10);
     if (!candidates.length) {
       throw new AppError("ENTITY_NOT_FOUND", `No player matched '${playerName}'`, {
-        retryable: false
+        retryable: false,
+        details: {
+          player_id: playerId,
+          player_name: playerName,
+          exact
+        }
       });
+    }
+
+    if (playerId) {
+      const matchedCandidate = candidates.find((candidate) => candidate.id === playerId);
+      if (matchedCandidate) {
+        return matchedCandidate;
+      }
+
+      throw new AppError(
+        "ENTITY_NOT_FOUND",
+        `Unable to resolve canonical player slug for '${playerName}' with player_id=${playerId}`,
+        {
+          retryable: false,
+          details: {
+            player_id: playerId,
+            player_name: playerName,
+            candidates: candidates.slice(0, 3).map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              slug: candidate.slug
+            }))
+          }
+        }
+      );
     }
 
     return candidates[0];

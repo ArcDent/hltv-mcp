@@ -1,8 +1,8 @@
 # HLTV MCP Service
 
-一个面向 HLTV 数据查询的 MCP 服务骨架。
+一个基于 `hltv-scraper-api` 的 HLTV MCP 服务骨架，当前主要面向 **OpenCode + local stdio MCP** 场景。
 
-当前提供的 tools：
+当前暴露的 tools：
 
 - `resolve_team`
 - `resolve_player`
@@ -12,46 +12,50 @@
 - `hltv_matches_upcoming`
 - `hltv_news_digest`
 
-上游默认依赖你自部署的 `hltv-scraper-api`：
+上游默认依赖你**自己部署**的 `hltv-scraper-api`：
 
-- `HLTV_API_BASE_URL=http://127.0.0.1:8000`
+```env
+HLTV_API_BASE_URL=http://127.0.0.1:8000
+```
 
 ---
 
-## 当前传输方式支持情况
+## 1. 当前支持情况
 
 ### 已实现
+
 - `stdio`
 
-### 可扩展但当前仓库未实现
+### 还没实现，但后续可扩展
+
 - `Streamable HTTP`
 - `SSE`
 
 也就是说：
 
 > 现在这份代码可以直接作为 **本地 stdio MCP server** 接给 OpenCode。  
-> 如果你后续要接其他支持 HTTP / SSE 的客户端，需要再补对应 transport 启动入口。
+> 如果你要对接 HTTP / SSE 客户端，需要你后续自己补 transport 启动入口。
 
 ---
 
-## 快速开始
+## 2. 快速开始
 
 ```bash
 npm install
 npm run build
 ```
 
-本地直接运行：
+可选手动启动：
 
 ```bash
 npm run start
 ```
 
-> 说明：这是一个 MCP stdio server，通常由 MCP 客户端拉起，而不是手动长期运行。
+> 这是一个 MCP stdio server，通常由 MCP 客户端拉起；手动运行时它不会像普通 HTTP 服务那样输出页面。
 
 ---
 
-## 必要环境变量
+## 3. 常用环境变量
 
 参考 `.env.example`，最常用的是：
 
@@ -65,40 +69,42 @@ SUMMARY_MODE=template
 
 ---
 
-## 与 OpenCode 对接
+## 4. 与 OpenCode 对接
 
-## 重要说明
+### 重要说明
 
 本仓库：
 
 - **不会自动帮你连接 OpenCode**
-- **不会自动写入你的 OpenCode 配置**
-- **不会自动执行 `opencode mcp add`**
+- **不会自动帮你写 `opencode.jsonc`**
+- **不会自动帮你创建 `.opencode/commands/*.md`**
+- **不会自动帮你注册 `/team` `/player` `/result` `/match` `/news`**
 
-你需要自己手动接入。
+这些都需要你手动完成。
 
 ---
 
-## OpenCode 接入步骤
-
-### 1. 先构建项目
+### 4.1 先构建项目
 
 ```bash
 npm install
 npm run build
 ```
 
-确保以下文件存在：
+确保存在：
 
 ```text
 dist/index.js
 ```
 
-### 2. 在 OpenCode 中配置 local MCP
+---
 
-推荐手工编辑 `opencode.json` / `opencode.jsonc`。
+### 4.2 在 OpenCode 中手动注册 local MCP
 
-模板如下：
+推荐手工编辑 `opencode.json` / `opencode.jsonc`：
+
+- 单文件模板：`docs/templates/opencode.jsonc`
+- 完整可复制示例：`examples/opencode-project/`
 
 ```jsonc
 {
@@ -124,13 +130,29 @@ dist/index.js
 }
 ```
 
-### 3. 验证是否接入成功
+如果你用的是别的 MCP 名称，而不是 `hltv_local`，后面所有工具名前缀都要一起改。
+
+例如：
+
+- MCP 名称是 `hltv_local`
+- 那么 OpenCode 里看到的实际工具名就是：
+  - `hltv_local_resolve_team`
+  - `hltv_local_resolve_player`
+  - `hltv_local_hltv_team_recent`
+  - `hltv_local_hltv_player_recent`
+  - `hltv_local_hltv_results_recent`
+  - `hltv_local_hltv_matches_upcoming`
+  - `hltv_local_hltv_news_digest`
+
+---
+
+### 4.3 验证 MCP 是否接入成功
 
 ```bash
 opencode mcp list
 ```
 
-或者：
+或：
 
 ```bash
 opencode mcp ls
@@ -140,55 +162,126 @@ opencode mcp ls
 
 - `hltv_local`
 
-### 4. 在 OpenCode 中使用
+---
 
-你可以尝试：
+### 4.4 在 OpenCode 中直接调用工具
 
-```text
-调用 hltv_team_recent，查询 Team Spirit 最近 5 场比赛并用中文总结
-```
-
-或者先测试解析工具：
+可以先测试实体解析：
 
 ```text
-调用 resolve_team，搜索 Spirit
+调用 hltv_local_resolve_team，搜索 Team Spirit
 ```
+
+再测试近况查询：
+
+```text
+调用 hltv_local_hltv_team_recent，查询 Team Spirit 最近 5 场比赛，并用中文总结
+```
+
+> 注意：本项目现在会优先通过 `resolve_team` / `resolve_player` 拿 canonical slug，避免像 `Team Spirit -> team-spirit` 这种本地伪造 slug 导致的 404。
 
 ---
 
-## 也可以用 OpenCode CLI 向导手动添加
+### 4.5 也可以用 OpenCode CLI 向导手动添加
 
 ```bash
 opencode mcp add
 ```
 
-推荐填写：
+建议填写：
 
 - 类型：`local`
 - 名称：`hltv_local`
 - command：`node`
 - args：`C:/ABSOLUTE/PATH/TO/hltv-mcp-service/dist/index.js`
 - timeout：`10000`
-- environment：与上面模板一致
+- environment：与上面示例一致
 
 ---
 
-## 其他客户端对接模板
+## 5. 手动注册 OpenCode slash commands
 
-下面给的是 **模板**。不同 MCP 客户端字段名可能不同，但核心思路一致。
+### 重要说明
+
+OpenCode 的 slash commands 不是 MCP 自动生成的。
+
+也就是说：
+
+- 你把 MCP 接进去以后，**tools 会出现**
+- 但 `/team` `/player` `/result` `/match` `/news` **不会自动出现**
+
+如果你要这些命令，需要你自己手动复制模板到：
+
+```text
+.opencode/commands/
+```
+
+如果你想直接参考一套完整目录结构，而不只是单个模板文件，可以看：
+
+```text
+examples/opencode-project/
+```
+
+这里面已经包含：
+
+- `opencode.jsonc`
+- `.opencode/commands/team.md`
+- `.opencode/commands/player.md`
+- `.opencode/commands/result.md`
+- `.opencode/commands/match.md`
+- `.opencode/commands/news.md`
+
+> 这个目录只是示例，不会被 OpenCode 自动加载。  
+> 你需要手动复制到你自己的项目里。
+
+本仓库已经提供了模板：
+
+- `docs/templates/opencode.commands.team.md`
+- `docs/templates/opencode.commands.player.md`
+- `docs/templates/opencode.commands.result.md`
+- `docs/templates/opencode.commands.match.md`
+- `docs/templates/opencode.commands.news.md`
+- `docs/templates/opencode.jsonc`
+
+推荐复制方式：
+
+- `docs/templates/opencode.commands.team.md` -> `.opencode/commands/team.md`
+- `docs/templates/opencode.commands.player.md` -> `.opencode/commands/player.md`
+- `docs/templates/opencode.commands.result.md` -> `.opencode/commands/result.md`
+- `docs/templates/opencode.commands.match.md` -> `.opencode/commands/match.md`
+- `docs/templates/opencode.commands.news.md` -> `.opencode/commands/news.md`
+
+复制完成后，你就可以在 OpenCode 里使用：
+
+- `/team Team Spirit`
+- `/player ZywOo`
+- `/result`
+- `/match`
+- `/news`
+
+> 模板默认写死使用 `hltv_local_` 前缀。  
+> 如果你的 MCP 名称不是 `hltv_local`，请先把模板里的工具名前缀改掉再使用。
 
 ---
 
-## 1) stdio 模板
+## 6. 其他客户端对接模板
 
-### 适用场景
-- 本地客户端拉起 MCP 进程
-- 桌面端 / CLI / IDE 类 MCP 客户端
+下面这些是**客户端配置模板**，不是当前仓库已经实现的服务端入口。
 
-### 当前仓库支持情况
+---
+
+### 6.1 stdio 模板
+
+#### 适用场景
+
+- 本地 CLI / IDE / 桌面 MCP 客户端
+- 客户端自己拉起 `node dist/index.js`
+
+#### 当前支持情况
+
 - **已实现，可直接使用**
 
-### 通用模板
+#### 通用模板
 
 ```json
 {
@@ -207,28 +300,15 @@ opencode mcp add
 }
 ```
 
-### 核心点
-- 客户端负责启动 `node dist/index.js`
-- 通过 stdin/stdout 与 MCP server 通信
-- 当前项目就是这种模式
-
 ---
 
-## 2) Streamable HTTP 模板
+### 6.2 Streamable HTTP 模板
 
-### 适用场景
-- 远程部署 MCP 服务
-- 多客户端共用一个 MCP endpoint
-- 更适合服务化部署
+#### 当前支持情况
 
-### 当前仓库支持情况
-- **SDK 支持，但本仓库当前未实现该传输入口**
+- **SDK 支持，但本仓库未实现服务端入口**
 
-如果你后续要支持这一模式，需要在代码中额外接入：
-
-- `StreamableHTTPServerTransport`
-
-### 通用客户端配置模板
+#### 客户端模板
 
 ```json
 {
@@ -240,27 +320,22 @@ opencode mcp add
 }
 ```
 
-### 说明
-- 这是客户端侧模板
-- 你还需要在服务端真正暴露一个 HTTP MCP endpoint
-- 当前仓库默认**没有**这个 endpoint
+#### 说明
+
+- 这是客户端模板
+- 当前仓库默认**没有**这个 HTTP endpoint
+- 如果要支持，需要你后续自行接入 `StreamableHTTPServerTransport`
 
 ---
 
-## 3) SSE 模板
+### 6.3 SSE 模板
 
-### 适用场景
-- 某些仍使用 SSE 方式接 MCP 的客户端
+#### 当前支持情况
 
-### 当前仓库支持情况
-- **SDK 可支持，但本仓库当前未实现该传输入口**
-- **并且 SSE 已不如 Streamable HTTP 推荐**
+- **SDK 可支持，但本仓库未实现服务端入口**
+- **新项目更推荐 Streamable HTTP，而不是 SSE**
 
-如果你后续要支持这一模式，需要在代码中额外接入：
-
-- `SSEServerTransport`
-
-### 通用客户端配置模板
+#### 客户端模板
 
 ```json
 {
@@ -269,52 +344,55 @@ opencode mcp add
 }
 ```
 
-### 说明
+#### 说明
+
 - 这是兼容性模板
-- 新项目更建议优先做 `Streamable HTTP`
 - 当前仓库默认**没有**这个 SSE endpoint
+- 如果要支持，需要你后续自行接入 `SSEServerTransport`
 
 ---
 
-## 你现在应该怎么选
+## 7. 故障排查
 
-### 如果你要接 OpenCode
-直接用：
+### 7.1 `HLTV API responded with 404`
 
-- `local`
-- `stdio`
+通常表示：
 
-这是当前仓库**已经可用**的方式。
+- 上游 `hltv-scraper-api` 没有这条实体
+- 或者详情路由里的 slug 不对
 
-### 如果你要接其他本地 MCP 客户端
-优先用：
+现在本项目会优先从搜索结果里的真实 `link/profile_link` 提取 slug，而不是只靠本地 `slugify()` 硬拼。
 
-- `stdio`
+如果还报错，先做这两步：
 
-### 如果你要做远程服务化部署
-建议后续扩展：
-
-- `Streamable HTTP`
-
-### 如果某个旧客户端只支持 SSE
-再补：
-
-- `SSE`
+1. 先调用 `hltv_local_resolve_team` / `hltv_local_resolve_player` 看解析结果
+2. 再检查错误输出里的 `上游路径` 和 `上游状态码`
 
 ---
 
-## 最后总结
+### 7.2 为什么我已经接了 MCP，但没有 `/team` 命令？
 
-当前仓库的最稳妥接法是：
+因为 OpenCode 的 command 和 MCP tool 是两套东西：
+
+- MCP 注册后你得到的是 tool
+- slash command 需要你自己在 `.opencode/commands/` 或 `opencode.jsonc` 里再注册
+
+---
+
+## 8. 最后总结
+
+当前仓库最稳妥的接法是：
 
 1. `npm install`
 2. `npm run build`
 3. 你手动把 `node dist/index.js` 注册到 OpenCode 的 `local MCP`
-4. 通过 `opencode mcp list` 检查
-5. 在 OpenCode 中调用工具
+4. 用 `opencode mcp list` 检查 `hltv_local` 是否出现
+5. 按需把 `docs/templates/` 里的命令模板复制到 `.opencode/commands/`
+6. 在 OpenCode 中调用 `/team` `/player` `/result` `/match` `/news` 或直接调用 prefixed tools
 
-如果你未来要接其他渠道：
+当前结论：
 
 - **stdio：现在就能用**
-- **Streamable HTTP：可以做，但当前仓库未实现**
-- **SSE：可以做，但当前仓库未实现，且不如 Streamable HTTP 推荐**
+- **OpenCode 命令模板：现在仓库已提供，可手动复制**
+- **Streamable HTTP：可扩展，但当前未实现**
+- **SSE：可扩展，但当前未实现**

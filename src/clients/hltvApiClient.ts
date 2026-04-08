@@ -1,4 +1,4 @@
-import { AppError } from "../errors/appError.js";
+import { AppError, isAppError } from "../errors/appError.js";
 import { ensureArray } from "../utils/object.js";
 import { slugify } from "../utils/strings.js";
 
@@ -11,8 +11,16 @@ export class HltvApiClient {
   constructor(private readonly options: HltvApiClientOptions) {}
 
   async searchTeams(name: string): Promise<unknown[]> {
-    const payload = await this.requestJson(`/api/v1/teams/search/${encodeURIComponent(name)}`);
-    return ensureArray(payload);
+    try {
+      const payload = await this.requestJson(`/api/v1/teams/search/${encodeURIComponent(name)}`);
+      return ensureArray(payload);
+    } catch (error) {
+      if (isAppError(error) && error.code === "UPSTREAM_NOT_FOUND") {
+        return [];
+      }
+
+      throw error;
+    }
   }
 
   async getTeam(teamId: number, teamName?: string): Promise<unknown> {
@@ -26,8 +34,16 @@ export class HltvApiClient {
   }
 
   async searchPlayers(name: string): Promise<unknown[]> {
-    const payload = await this.requestJson(`/api/v1/players/search/${encodeURIComponent(name)}`);
-    return ensureArray(payload);
+    try {
+      const payload = await this.requestJson(`/api/v1/players/search/${encodeURIComponent(name)}`);
+      return ensureArray(payload);
+    } catch (error) {
+      if (isAppError(error) && error.code === "UPSTREAM_NOT_FOUND") {
+        return [];
+      }
+
+      throw error;
+    }
   }
 
   async getPlayer(playerId: number, playerName?: string): Promise<unknown> {
@@ -78,6 +94,16 @@ export class HltvApiClient {
       });
 
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new AppError("UPSTREAM_NOT_FOUND", `HLTV API responded with 404 for ${path}`, {
+            retryable: false,
+            details: {
+              path,
+              status: response.status
+            }
+          });
+        }
+
         throw new AppError("UPSTREAM_UNAVAILABLE", `HLTV API responded with ${response.status}`, {
           retryable: response.status >= 500,
           details: {
