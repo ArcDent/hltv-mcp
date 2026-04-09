@@ -21,6 +21,7 @@ import { includesIgnoreCase } from "../utils/strings.js";
 import { HltvApiClient } from "../clients/hltvApiClient.js";
 import { PlayerResolver } from "../resolvers/playerResolver.js";
 import { TeamResolver } from "../resolvers/teamResolver.js";
+import { buildSlugCandidates, entityAliases, normalizeLookupName, uniqueStrings } from "../resolvers/entityIdentity.js";
 import {
   collectRecentHighlights,
   normalizeMatches,
@@ -200,6 +201,7 @@ export class HltvFacade {
 
   async getResultsRecent(query: ResultsRecentQuery): Promise<ToolResponse<never, NormalizedMatch>> {
     const normalizedQuery = {
+      team_id: query.team_id,
       team: query.team,
       event: query.event,
       limit: query.limit ?? this.config.defaultResultLimit,
@@ -209,9 +211,10 @@ export class HltvFacade {
     const cacheKey = `results_recent:${JSON.stringify(normalizedQuery)}`;
 
     return this.withCache(cacheKey, this.config.resultsCacheTtlSec, normalizedQuery, async () => {
+      const teamFilter = await this.resolveOptionalTeamFilter(normalizedQuery.team_id, normalizedQuery.team);
       const rawResults = await this.client.getRecentResults();
       const items = normalizeResults(rawResults)
-        .filter((item) => this.matchesQuery(item, normalizedQuery.team, normalizedQuery.event))
+        .filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event))
         .slice(0, normalizedQuery.limit);
 
       return {
@@ -227,6 +230,7 @@ export class HltvFacade {
     query: UpcomingMatchesQuery
   ): Promise<ToolResponse<never, NormalizedMatch>> {
     const normalizedQuery = {
+      team_id: query.team_id,
       team: query.team,
       event: query.event,
       limit: query.limit ?? this.config.defaultResultLimit,
@@ -236,9 +240,10 @@ export class HltvFacade {
     const cacheKey = `matches_upcoming:${JSON.stringify(normalizedQuery)}`;
 
     return this.withCache(cacheKey, this.config.matchesCacheTtlSec, normalizedQuery, async () => {
+      const teamFilter = await this.resolveOptionalTeamFilter(normalizedQuery.team_id, normalizedQuery.team);
       const rawMatches = await this.client.getUpcomingMatches();
       const items = normalizeUpcomingMatches(rawMatches)
-        .filter((item) => this.matchesQuery(item, normalizedQuery.team, normalizedQuery.event))
+        .filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event))
         .slice(0, normalizedQuery.limit);
 
       return {
@@ -290,8 +295,30 @@ export class HltvFacade {
     teamName: string | undefined,
     exact = false
   ): Promise<ResolvedTeamEntity> {
+    if (teamId) {
+      const resolvedById = await this.resolveTeamById(teamId, teamName, exact);
+      if (resolvedById) {
+        return resolvedById;
+      }
+
+      throw new AppError(
+        "ENTITY_NOT_FOUND",
+        teamName
+          ? `Unable to resolve canonical team slug for '${teamName}' with team_id=${teamId}`
+          : `Unable to resolve canonical team slug for team_id=${teamId}`,
+        {
+          retryable: false,
+          details: {
+            team_id: teamId,
+            team_name: teamName,
+            exact
+          }
+        }
+      );
+    }
+
     if (!teamName) {
-      throw new AppError("INVALID_ARGUMENT", "team_name is required to resolve canonical team slug", {
+      throw new AppError("INVALID_ARGUMENT", "team_id or team_name is required", {
         retryable: false,
         details: {
           team_id: teamId,
@@ -312,30 +339,6 @@ export class HltvFacade {
       });
     }
 
-    if (teamId) {
-      const matchedCandidate = candidates.find((candidate) => candidate.id === teamId);
-      if (matchedCandidate) {
-        return matchedCandidate;
-      }
-
-      throw new AppError(
-        "ENTITY_NOT_FOUND",
-        `Unable to resolve canonical team slug for '${teamName}' with team_id=${teamId}`,
-        {
-          retryable: false,
-          details: {
-            team_id: teamId,
-            team_name: teamName,
-            candidates: candidates.slice(0, 3).map((candidate) => ({
-              id: candidate.id,
-              name: candidate.name,
-              slug: candidate.slug
-            }))
-          }
-        }
-      );
-    }
-
     return candidates[0];
   }
 
@@ -344,8 +347,30 @@ export class HltvFacade {
     playerName: string | undefined,
     exact = false
   ): Promise<ResolvedPlayerEntity> {
+    if (playerId) {
+      const resolvedById = await this.resolvePlayerById(playerId, playerName, exact);
+      if (resolvedById) {
+        return resolvedById;
+      }
+
+      throw new AppError(
+        "ENTITY_NOT_FOUND",
+        playerName
+          ? `Unable to resolve canonical player slug for '${playerName}' with player_id=${playerId}`
+          : `Unable to resolve canonical player slug for player_id=${playerId}`,
+        {
+          retryable: false,
+          details: {
+            player_id: playerId,
+            player_name: playerName,
+            exact
+          }
+        }
+      );
+    }
+
     if (!playerName) {
-      throw new AppError("INVALID_ARGUMENT", "player_name is required to resolve canonical player slug", {
+      throw new AppError("INVALID_ARGUMENT", "player_id or player_name is required", {
         retryable: false,
         details: {
           player_id: playerId,
@@ -364,30 +389,6 @@ export class HltvFacade {
           exact
         }
       });
-    }
-
-    if (playerId) {
-      const matchedCandidate = candidates.find((candidate) => candidate.id === playerId);
-      if (matchedCandidate) {
-        return matchedCandidate;
-      }
-
-      throw new AppError(
-        "ENTITY_NOT_FOUND",
-        `Unable to resolve canonical player slug for '${playerName}' with player_id=${playerId}`,
-        {
-          retryable: false,
-          details: {
-            player_id: playerId,
-            player_name: playerName,
-            candidates: candidates.slice(0, 3).map((candidate) => ({
-              id: candidate.id,
-              name: candidate.name,
-              slug: candidate.slug
-            }))
-          }
-        }
-      );
     }
 
     return candidates[0];
@@ -416,11 +417,190 @@ export class HltvFacade {
     };
   }
 
-  private matchesQuery(item: NormalizedMatch, team?: string, event?: string): boolean {
-    const teamMatches =
-      !team || includesIgnoreCase(item.team1, team) || includesIgnoreCase(item.team2, team) || includesIgnoreCase(item.opponent, team);
+  private matchesQuery(
+    item: NormalizedMatch,
+    teamFilter?: { id?: number; names: string[] },
+    event?: string
+  ): boolean {
+    const teamMatches = !teamFilter || this.matchTeamFilter(item, teamFilter);
     const eventMatches = !event || includesIgnoreCase(item.event, event);
     return teamMatches && eventMatches;
+  }
+
+  private async resolveTeamById(
+    teamId: number,
+    teamName?: string,
+    exact = false
+  ): Promise<ResolvedTeamEntity | undefined> {
+    const cached = this.teamResolver.getById(teamId);
+    if (cached) {
+      return cached;
+    }
+
+    if (teamName) {
+      const candidates = await this.teamResolver.resolve(teamName, exact, 10);
+      const matched = candidates.find((candidate) => candidate.id === teamId);
+      if (matched) {
+        return matched;
+      }
+    }
+
+    const slugHints = buildSlugCandidates("team", teamId, undefined, [teamName]);
+    for (const slug of slugHints) {
+      try {
+        const detail = await this.client.getTeam(teamId, slug);
+        const fallback: ResolvedTeamEntity = {
+          type: "team",
+          id: teamId,
+          name: teamName ?? slug,
+          slug,
+          aliases: uniqueStrings([teamName, slug])
+        };
+        const profile = normalizeTeamProfile(detail, fallback);
+        return this.teamResolver.remember(
+          {
+            type: "team",
+            id: profile.id,
+            name: profile.name,
+            slug: profile.slug,
+            country: profile.country,
+            rank: profile.rank,
+            aliases: uniqueStrings([teamName, slug, profile.name, profile.slug])
+          },
+          uniqueStrings([teamName, slug])
+        );
+      } catch (error) {
+        if (isAppError(error) && error.code === "UPSTREAM_NOT_FOUND") {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async resolvePlayerById(
+    playerId: number,
+    playerName?: string,
+    exact = false
+  ): Promise<ResolvedPlayerEntity | undefined> {
+    const cached = this.playerResolver.getById(playerId);
+    if (cached) {
+      return cached;
+    }
+
+    if (playerName) {
+      const candidates = await this.playerResolver.resolve(playerName, exact, 10);
+      const matched = candidates.find((candidate) => candidate.id === playerId);
+      if (matched) {
+        return matched;
+      }
+    }
+
+    const slugHints = buildSlugCandidates("player", playerId, undefined, [playerName]);
+    for (const slug of slugHints) {
+      try {
+        const detail = await this.client.getPlayer(playerId, slug);
+        const fallback: ResolvedPlayerEntity = {
+          type: "player",
+          id: playerId,
+          name: playerName ?? slug,
+          slug,
+          aliases: uniqueStrings([playerName, slug])
+        };
+        const profile = normalizePlayerProfile(detail, fallback);
+        return this.playerResolver.remember(
+          {
+            type: "player",
+            id: profile.id,
+            name: profile.name,
+            slug: profile.slug,
+            team: profile.team,
+            country: profile.country,
+            aliases: uniqueStrings([playerName, slug, profile.name, profile.slug])
+          },
+          uniqueStrings([playerName, slug])
+        );
+      } catch (error) {
+        if (isAppError(error) && error.code === "UPSTREAM_NOT_FOUND") {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async resolveOptionalTeamFilter(
+    teamId?: number,
+    teamName?: string
+  ): Promise<{ id?: number; names: string[] } | undefined> {
+    if (!teamId && !teamName) {
+      return undefined;
+    }
+
+    if (teamId) {
+      const resolved = await this.resolveTeamById(teamId, teamName, false);
+      if (resolved) {
+        return {
+          id: resolved.id,
+          names: entityAliases(resolved)
+        };
+      }
+
+      return {
+        id: teamId,
+        names: uniqueStrings([teamName])
+      };
+    }
+
+    const candidates = await this.teamResolver.resolve(teamName!, false, 10);
+    if (!candidates.length) {
+      throw new AppError("ENTITY_NOT_FOUND", `No team matched '${teamName}'`, {
+        retryable: false,
+        details: {
+          team_id: teamId,
+          team_name: teamName
+        }
+      });
+    }
+
+    return {
+      id: candidates[0].id,
+      names: entityAliases(candidates[0])
+    };
+  }
+
+  private matchTeamFilter(item: NormalizedMatch, teamFilter: { id?: number; names: string[] }): boolean {
+    if (
+      teamFilter.id !== undefined &&
+      [item.team1_id, item.team2_id, item.opponent_id].some((candidateId) => candidateId === teamFilter.id)
+    ) {
+      return true;
+    }
+
+    if (!teamFilter.names.length) {
+      return false;
+    }
+
+    const itemNames = uniqueStrings([item.team1, item.team2, item.opponent]);
+    return teamFilter.names.some((name) => {
+      const target = normalizeLookupName(name);
+      return itemNames.some((candidate) => {
+        const normalized = normalizeLookupName(candidate);
+        return (
+          normalized.strict === target.strict ||
+          normalized.loose === target.loose ||
+          normalized.slug === target.slug ||
+          normalized.loose.includes(target.loose) ||
+          target.loose.includes(normalized.loose)
+        );
+      });
+    });
   }
 
   private createMeta(ttlSec: number, overrides: Partial<ToolMeta> = {}): ToolMeta {

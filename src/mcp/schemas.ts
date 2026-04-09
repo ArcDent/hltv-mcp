@@ -29,6 +29,7 @@ export const playerRecentSchema = {
 };
 
 export const resultsSchema = {
+  team_id: z.number().int().positive().optional(),
   team: z.string().min(1).optional(),
   event: z.string().min(1).optional(),
   limit: z.number().int().min(1).max(20).optional(),

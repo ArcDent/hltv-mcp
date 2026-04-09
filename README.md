@@ -15,7 +15,7 @@
 上游默认依赖你**自己部署**的 `hltv-scraper-api`：
 
 ```env
-HLTV_API_BASE_URL=http://127.0.0.1:8000
+HLTV_API_BASE_URL=http://127.0.0.1:8020
 ```
 
 ---
@@ -60,12 +60,29 @@ npm run start
 参考 `.env.example`，最常用的是：
 
 ```env
-HLTV_API_BASE_URL=http://127.0.0.1:8000
+HLTV_API_BASE_URL=http://127.0.0.1:8020
 HLTV_API_TIMEOUT_MS=8000
 DEFAULT_TIMEZONE=Asia/Shanghai
 DEFAULT_RESULT_LIMIT=5
 SUMMARY_MODE=template
 ```
+
+---
+
+## 3.1 查询建议与已验证行为
+
+以下行为已在当前实现中验证：
+
+- **推荐先走 `resolve_*`**：先把输入 name 解析成实体（id + canonical slug），再调用近况/赛果工具。
+- **别名归一化示例**（已验证样例）：
+  - 选手：`ZywOo` / `zywoo` / `载物`
+  - 队伍：`Spirit` / `Team Spirit`
+- **`hltv_team_recent` / `hltv_player_recent` 为 ID-first**：
+  - 传了 `team_id` / `player_id` 时，会优先按 ID 路径解析与拉取详情；
+  - 不会仅因为原始 `team_name` / `player_name` 无法再次精确解析而直接失败（前提是该 ID 在上游可访问）。
+- **`hltv_results_recent` / `hltv_matches_upcoming` 支持 `team_id` 过滤**：
+  - 可只传 `team_id`，也可与 `team` 同时传；
+  - 过滤时会优先匹配队伍 ID，并结合名称别名做补充匹配。
 
 ---
 
@@ -119,7 +136,7 @@ dist/index.js
       "enabled": true,
       "timeout": 10000,
       "environment": {
-        "HLTV_API_BASE_URL": "http://127.0.0.1:8000",
+        "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
         "HLTV_API_TIMEOUT_MS": "8000",
         "DEFAULT_TIMEZONE": "Asia/Shanghai",
         "DEFAULT_RESULT_LIMIT": "5",
@@ -176,6 +193,18 @@ opencode mcp ls
 
 ```text
 调用 hltv_local_hltv_team_recent，查询 Team Spirit 最近 5 场比赛，并用中文总结
+```
+
+如果你已经拿到实体 ID，推荐直接按 ID 查询（ID-first）：
+
+```text
+先调用 hltv_local_resolve_player，搜索 zywoo
+再调用 hltv_local_hltv_player_recent，传 player_id=<上一步结果里的 id>
+```
+
+```text
+调用 hltv_local_hltv_results_recent，传 team_id=<Team Spirit 的 id>
+调用 hltv_local_hltv_matches_upcoming，传 team_id=<Team Spirit 的 id>
 ```
 
 > 注意：本项目现在会优先通过 `resolve_team` / `resolve_player` 拿 canonical slug，避免像 `Team Spirit -> team-spirit` 这种本地伪造 slug 导致的 404。
@@ -291,7 +320,7 @@ examples/opencode-project/
     "/absolute/path/to/hltv-mcp-service/dist/index.js"
   ],
   "env": {
-    "HLTV_API_BASE_URL": "http://127.0.0.1:8000",
+    "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
     "HLTV_API_TIMEOUT_MS": "8000",
     "DEFAULT_TIMEZONE": "Asia/Shanghai",
     "DEFAULT_RESULT_LIMIT": "5",

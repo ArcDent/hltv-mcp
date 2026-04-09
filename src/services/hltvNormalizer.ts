@@ -7,6 +7,7 @@ import type {
   TeamProfile
 } from "../types/hltv.js";
 import { asRecord, compact, pickArray, pickNumber, pickString, pickValue } from "../utils/object.js";
+import { parseHltvEntityLink } from "../utils/strings.js";
 import { normalizeDateTime } from "../utils/time.js";
 
 function parseLooseNumber(value: unknown): number | undefined {
@@ -162,10 +163,13 @@ export function normalizeTeamProfile(
     };
   }
 
+  const link = pickString(record, ["link", "profile_link", "href", "url"]);
+  const parsedLink = parseHltvEntityLink(link, "team");
+
   return {
     id: pickNumber(record, ["id", "team_id", "teamId"]) ?? fallback.id,
     name: pickString(record, ["name", "team_name", "teamName", "team"]) ?? fallback.name,
-    slug: fallback.slug,
+    slug: parsedLink.slug ?? fallback.slug,
     country:
       pickString(record, ["country", "country_code", "countryCode", "country.name", "country.code"]) ??
       fallback.country,
@@ -189,10 +193,13 @@ export function normalizePlayerProfile(
     };
   }
 
+  const link = pickString(record, ["profile_link", "link", "href", "url"]);
+  const parsedLink = parseHltvEntityLink(link, "player");
+
   return {
     id: pickNumber(record, ["id", "player_id", "playerId"]) ?? fallback.id,
     name: pickString(record, ["name", "player_name", "playerName", "player", "nick"]) ?? fallback.name,
-    slug: fallback.slug,
+    slug: parsedLink.slug ?? fallback.slug,
     team:
       pickString(record, ["team", "team_name", "teamName", "current_team", "team.name"]) ??
       firstString(pickArray(record, ["team"])) ??
@@ -256,9 +263,14 @@ export function normalizeMatches(rawItems: unknown[], perspective?: string): Nor
 
       const team1 = pickString(record, ["team1", "team1_name", "team1.name", "team1Name"]);
       const team2 = pickString(record, ["team2", "team2_name", "team2.name", "team2Name"]);
+      const team1Id = pickNumber(record, ["team1_id", "team1Id", "team1.id", "team1.team_id"]);
+      const team2Id = pickNumber(record, ["team2_id", "team2Id", "team2.id", "team2.team_id"]);
       const opponent =
         pickString(record, ["opponent", "opponent_name", "opponentName"]) ??
         (perspective && team1 === perspective ? team2 : perspective && team2 === perspective ? team1 : undefined);
+      const opponentId =
+        pickNumber(record, ["opponent_id", "opponentId", "opponent.id", "opponent.team_id"]) ??
+        (perspective && team1 === perspective ? team2Id : perspective && team2 === perspective ? team1Id : undefined);
       const scheduled = normalizeDateTime(
         pickString(record, ["scheduled_at", "date", "datetime", "time", "timestamp", "match_time"])
       );
@@ -270,6 +282,9 @@ export function normalizeMatches(rawItems: unknown[], perspective?: string): Nor
 
       return {
         match_id: pickNumber(record, ["id", "match_id", "matchId"]),
+        team1_id: team1Id,
+        team2_id: team2Id,
+        opponent_id: opponentId,
         team1,
         team2,
         opponent,

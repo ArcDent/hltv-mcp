@@ -189,7 +189,9 @@ export class ChineseRenderer {
     const detailLines = [
       typeof details?.path === "string" ? `- 上游路径：${details.path}` : undefined,
       details?.status !== undefined ? `- 上游状态码：${details.status}` : undefined,
+      details?.team_id !== undefined ? `- 队伍ID：${details.team_id}` : undefined,
       typeof details?.team_name === "string" ? `- 队伍参数：${details.team_name}` : undefined,
+      details?.player_id !== undefined ? `- 选手ID：${details.player_id}` : undefined,
       typeof details?.player_name === "string" ? `- 选手参数：${details.player_name}` : undefined
     ].filter(Boolean);
 

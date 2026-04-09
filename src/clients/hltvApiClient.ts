@@ -59,9 +59,19 @@ export class HltvApiClient {
   }
 
   async getRecentResults(offset = 0): Promise<unknown[]> {
-    const path = offset > 0 ? `/api/v1/results/${offset}` : "/api/v1/results";
-    const payload = await this.requestJson(path);
-    return ensureArray(payload);
+    const preferredPath = offset > 0 ? `/api/v1/results/${offset}` : "/api/v1/results/";
+
+    try {
+      const payload = await this.requestJson(preferredPath);
+      return ensureArray(payload);
+    } catch (error) {
+      if (offset === 0 && isAppError(error) && error.code === "UPSTREAM_NOT_FOUND") {
+        const fallbackPayload = await this.requestJson("/api/v1/results");
+        return ensureArray(fallbackPayload);
+      }
+
+      throw error;
+    }
   }
 
   async getUpcomingMatches(): Promise<unknown[]> {

@@ -27,6 +27,7 @@ export interface PlayerRecentQuery {
 }
 
 export interface ResultsRecentQuery {
+  team_id?: number;
   team?: string;
   event?: string;
   limit?: number;
@@ -35,6 +36,7 @@ export interface ResultsRecentQuery {
 }
 
 export interface UpcomingMatchesQuery {
+  team_id?: number;
   team?: string;
   event?: string;
   limit?: number;
@@ -76,6 +78,9 @@ export type MatchOutcome = "win" | "loss" | "draw" | "scheduled" | "unknown";
 
 export interface NormalizedMatch {
   match_id?: number;
+  team1_id?: number;
+  team2_id?: number;
+  opponent_id?: number;
   team1?: string;
   team2?: string;
   opponent?: string;

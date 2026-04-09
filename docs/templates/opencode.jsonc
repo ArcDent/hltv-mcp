@@ -11,7 +11,7 @@
       "enabled": true,
       "timeout": 10000,
       "environment": {
-        "HLTV_API_BASE_URL": "http://127.0.0.1:8000",
+        "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
         "HLTV_API_TIMEOUT_MS": "8000",
         "DEFAULT_TIMEZONE": "Asia/Shanghai",
         "DEFAULT_RESULT_LIMIT": "5",

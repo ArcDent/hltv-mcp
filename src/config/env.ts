@@ -37,7 +37,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     mcpServerName: readString(env.MCP_SERVER_NAME, "hltv-mcp-service"),
     mcpServerVersion: readString(env.MCP_SERVER_VERSION, "0.1.0"),
-    hltvApiBaseUrl: readString(env.HLTV_API_BASE_URL, "http://127.0.0.1:8000"),
+    hltvApiBaseUrl: readString(env.HLTV_API_BASE_URL, "http://127.0.0.1:8020"),
     hltvApiTimeoutMs: readNumber(env.HLTV_API_TIMEOUT_MS, 8_000),
     defaultTimezone: readString(env.DEFAULT_TIMEZONE, "Asia/Shanghai"),
     defaultResultLimit: readNumber(env.DEFAULT_RESULT_LIMIT, 5),
