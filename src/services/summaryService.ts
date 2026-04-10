@@ -12,6 +12,10 @@ import type {
 export class SummaryService {
   constructor(private readonly mode: SummaryMode) {}
 
+  private reasonHint(response: ToolResponse): string {
+    return response.meta.notes?.[0] ? ` 原因：${response.meta.notes[0]}` : "";
+  }
+
   summarizeTeam(response: ToolResponse<TeamRecentData, never, ResolvedTeamEntity>): string {
     if (this.mode === "raw") {
       return "已启用 raw 模式，当前未生成自然语言摘要。";
@@ -25,12 +29,13 @@ export class SummaryService {
     const nextOpponent = upcoming_matches[0]?.opponent ?? upcoming_matches[0]?.team2 ?? upcoming_matches[0]?.team1;
     const rankText = profile.rank ? `当前排名约为 #${profile.rank}` : "当前排名信息缺失";
     const recordText = `近况为 ${summary_stats.recent_record}`;
+    const reasonHint = this.reasonHint(response);
 
     if (nextOpponent) {
-      return `${profile.name} ${rankText}，${recordText}。接下来最值得关注的是对阵 ${nextOpponent} 的比赛，可继续观察其状态延续性。`;
+      return `${profile.name} ${rankText}，${recordText}。接下来最值得关注的是对阵 ${nextOpponent} 的比赛，可继续观察其状态延续性。${reasonHint}`;
     }
 
-    return `${profile.name} ${rankText}，${recordText}。目前可用数据表明其近期表现较为稳定，建议结合最近几场比赛继续观察。`;
+    return `${profile.name} ${rankText}，${recordText}。目前可用数据表明其近期表现较为稳定，建议结合最近几场比赛继续观察。${reasonHint}`;
   }
 
   summarizePlayer(response: ToolResponse<PlayerRecentData, never, ResolvedPlayerEntity>): string {
@@ -46,8 +51,9 @@ export class SummaryService {
     const rating = overview.rating ?? overview.adr ?? overview.impact;
     const statsText = rating ? `关键指标 ${rating}` : "关键统计数据有限";
     const highlightText = recent_highlights[0] ? `最近亮点包括：${recent_highlights[0]}` : "近期亮点数据有限";
+    const reasonHint = this.reasonHint(response);
 
-    return `${profile.name}${profile.team ? `（${profile.team}）` : ""}近期状态概览：${statsText}，${highlightText}。建议在后续比赛中继续关注其稳定输出能力。`;
+    return `${profile.name}${profile.team ? `（${profile.team}）` : ""}近期状态概览：${statsText}，${highlightText}。建议在后续比赛中继续关注其稳定输出能力。${reasonHint}`;
   }
 
   summarizeResults(response: ToolResponse<never, NormalizedMatch>): string {
@@ -56,7 +62,7 @@ export class SummaryService {
     }
 
     if (response.error || !response.items?.length) {
-      return "当前无法生成结果摘要，请参考下方列表。";
+      return `当前无法生成结果摘要，请参考下方列表。${this.reasonHint(response)}`;
     }
 
     const focus = response.items.slice(0, 2).map((item) => `${item.team1} vs ${item.team2}`).join("；");
@@ -69,7 +75,7 @@ export class SummaryService {
     }
 
     if (response.error || !response.items?.length) {
-      return "当前无法生成赛程摘要，请参考下方列表。";
+      return `当前无法生成赛程摘要，请参考下方列表。${this.reasonHint(response)}`;
     }
 
     const focus = response.items.slice(0, 2).map((item) => `${item.team1} vs ${item.team2}`).join("；");
@@ -82,7 +88,7 @@ export class SummaryService {
     }
 
     if (response.error || !response.items?.length) {
-      return "当前无法生成新闻摘要，请参考下方列表。";
+      return `当前无法生成新闻摘要，请参考下方列表。${this.reasonHint(response)}`;
     }
 
     const focus = response.items.slice(0, 3).map((item) => item.title).join("；");

@@ -52,6 +52,7 @@ export class ChineseRenderer {
       "【中文总结】",
       summary,
       "",
+      ...this.renderReasonSection(response),
       `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
@@ -86,6 +87,7 @@ export class ChineseRenderer {
       "【中文总结】",
       summary,
       "",
+      ...this.renderReasonSection(response),
       `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
@@ -125,6 +127,7 @@ export class ChineseRenderer {
       "【中文总结】",
       summary,
       "",
+      ...this.renderReasonSection(response),
       `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
@@ -162,6 +165,7 @@ export class ChineseRenderer {
     }
 
     const timezone = (response.query.timezone as string) || "Asia/Shanghai";
+    const emptyText = scheduled ? "暂无匹配赛程" : "暂无比赛数据";
     const lines = response.items?.length
       ? response.items
           .map((item, index) => {
@@ -169,7 +173,7 @@ export class ChineseRenderer {
             return `${index + 1}. ${item.team1 ?? "TBD"} vs ${item.team2 ?? "TBD"}${item.score ? ` — ${item.score}` : ""}${item.event ? ` — ${item.event}` : ""}${timeValue ? ` — ${formatDateTime(timeValue, timezone)}` : ""}`;
           })
           .join("\n")
-      : "暂无比赛数据";
+      : emptyText;
 
     return [
       `【${title}】`,
@@ -179,6 +183,7 @@ export class ChineseRenderer {
       "【中文总结】",
       summary,
       "",
+      ...this.renderReasonSection(response),
       `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
@@ -200,11 +205,21 @@ export class ChineseRenderer {
       `请求失败：${response.error?.code ?? "UNKNOWN"}`,
       response.error?.message ?? "未知错误",
       ...detailLines,
+      ...(response.meta.notes?.map((note) => `- 原因：${note}`) ?? []),
       response.meta.stale ? "已尝试使用缓存回退。" : "",
       `【更新时间】${formatDateTime(response.meta.fetched_at, response.meta.timezone)}`,
       `【来源】${response.meta.source}`
     ]
       .filter(Boolean)
       .join("\n");
+  }
+
+  private renderReasonSection(response: ToolResponse): string[] {
+    const notes = response.meta.notes ?? [];
+    if (!notes.length) {
+      return [];
+    }
+
+    return ["【原因说明】", ...notes.map((note) => `- ${note}`), ""];
   }
 }

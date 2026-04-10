@@ -7,7 +7,7 @@ import type {
   TeamProfile
 } from "../types/hltv.js";
 import { asRecord, compact, pickArray, pickNumber, pickString, pickValue } from "../utils/object.js";
-import { parseHltvEntityLink } from "../utils/strings.js";
+import { parseHltvEntityLink, sanitizeHltvText } from "../utils/strings.js";
 import { normalizeDateTime } from "../utils/time.js";
 
 function parseLooseNumber(value: unknown): number | undefined {
@@ -39,14 +39,263 @@ function pickLooseNumber(record: Record<string, unknown>, paths: string[]): numb
   return undefined;
 }
 
+function unwrapPrimaryRecord(raw: unknown): Record<string, unknown> | undefined {
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const record = asRecord(item);
+      if (record) {
+        return record;
+      }
+    }
+
+    return undefined;
+  }
+
+  return asRecord(raw);
+}
+
 function firstString(items: unknown[] | undefined): string | undefined {
   for (const item of items ?? []) {
     if (typeof item === "string" && item.trim().length > 0) {
-      return item.trim();
+      return sanitizeHltvText(item);
     }
   }
 
   return undefined;
+}
+
+function firstNamedValue(items: unknown[] | undefined): string | undefined {
+  for (const item of items ?? []) {
+    if (typeof item === "string" && item.trim().length > 0) {
+      return sanitizeHltvText(item);
+    }
+
+    const record = asRecord(item);
+    if (!record) {
+      continue;
+    }
+
+    const value = pickString(record, [
+      "name",
+      "team_name",
+      "teamName",
+      "player_name",
+      "playerName",
+      "nick",
+      "title",
+      "text"
+    ]);
+
+    if (value) {
+      return sanitizeHltvText(value);
+    }
+  }
+
+  return undefined;
+}
+
+function unwrapEntityName(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = sanitizeHltvText(value);
+    return trimmed || undefined;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return sanitizeHltvText(
+    pickString(record, ["name", "team_name", "teamName", "player_name", "playerName"])
+  );
+}
+
+function normalizeCountryText(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = sanitizeHltvText(value);
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const flagMatch =
+    trimmed.match(/\/flags\/[^/]+\/([a-z]{2})\.(?:gif|png|svg|webp)/i) ??
+    trimmed.match(/\b([A-Z]{2})\.(?:gif|png|svg|webp)\b/);
+
+  if (flagMatch?.[1]) {
+    return flagMatch[1].toUpperCase();
+  }
+
+  return trimmed;
+}
+
+function pickCountry(record: Record<string, unknown>, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const rawValue = pickValue(record, [path]);
+    if (typeof rawValue === "string") {
+      const normalized = normalizeCountryText(rawValue);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function flattenMetricArray(value: unknown): Record<string, string | number> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries: Array<[string, string | number]> = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    if (!record) {
+      continue;
+    }
+
+    for (const [key, rawValue] of Object.entries(record)) {
+      if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+        entries.push([key, rawValue]);
+        continue;
+      }
+
+        if (typeof rawValue === "string" && rawValue.trim().length > 0) {
+          const sanitized = sanitizeHltvText(rawValue);
+          if (sanitized) {
+            entries.push([key, sanitized]);
+          }
+        }
+    }
+  }
+
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function buildDateTimeCandidate(
+  record: Record<string, unknown>,
+  datePaths: string[],
+  timePaths: string[],
+  fallbackPaths: string[]
+): string | undefined {
+  const direct = pickString(record, fallbackPaths);
+  if (direct) {
+    return normalizeDateTime(direct);
+  }
+
+  const datePart = pickString(record, datePaths);
+  const timePart = pickString(record, timePaths);
+  if (datePart && timePart) {
+    return normalizeDateTime(`${datePart} ${timePart}`);
+  }
+
+  return normalizeDateTime(datePart ?? timePart);
+}
+
+function parseMatchIdFromLink(link: string | undefined): number | undefined {
+  if (!link) {
+    return undefined;
+  }
+
+  const matched = link.match(/\/matches\/(\d+)\//i);
+  if (!matched) {
+    return undefined;
+  }
+
+  const parsed = Number(matched[1]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function looksLikeMatchRecord(record: Record<string, unknown>): boolean {
+  return Boolean(
+    pickValue(record, [
+      "team1",
+      "team1_name",
+      "team1.name",
+      "team2",
+      "team2_name",
+      "team2.name",
+      "opponent",
+      "opponent_name",
+      "opponentName",
+      "score",
+      "result",
+      "scoreline",
+      "event",
+      "event_name",
+      "event.name",
+      "event_title",
+      "date",
+      "datetime",
+      "time",
+      "timestamp",
+      "hour",
+      "match_time",
+      "played_at",
+      "scheduled_at"
+    ]) ?? pickString(record, ["link", "url"])
+  );
+}
+
+function expandMatchItems(rawItems: unknown[]): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item);
+      }
+      return;
+    }
+
+    const record = asRecord(value);
+    if (!record) {
+      return;
+    }
+
+    const nested = pickArray(record, [
+      "matches",
+      "recent_matches",
+      "recentResults",
+      "results",
+      "upcoming_matches",
+      "upcomingMatches"
+    ]);
+
+    if (nested?.length) {
+      for (const item of nested) {
+        visit(item);
+      }
+      return;
+    }
+
+    if (looksLikeMatchRecord(record)) {
+      out.push(record);
+    }
+  };
+
+  for (const item of rawItems) {
+    visit(item);
+  }
+
+  return out;
+}
+
+function buildPlayerName(record: Record<string, unknown>, fallbackName: string): string {
+  const explicit = sanitizeHltvText(pickString(record, ["player_name", "playerName", "player"]));
+  if (explicit) {
+    return explicit;
+  }
+
+  const nick = sanitizeHltvText(pickString(record, ["nick"]));
+  if (nick && fallbackName.toLowerCase().includes(nick.toLowerCase())) {
+    return sanitizeHltvText(fallbackName) ?? fallbackName;
+  }
+
+  return nick ?? sanitizeHltvText(pickString(record, ["name"])) ?? sanitizeHltvText(fallbackName) ?? fallbackName;
 }
 
 function listToText(value: unknown, separator = ", "): string | undefined {
@@ -57,7 +306,7 @@ function listToText(value: unknown, separator = ", "): string | undefined {
   const values = value
     .map((item) => {
       if (typeof item === "string") {
-        return item.trim();
+        return sanitizeHltvText(item);
       }
 
       if (typeof item === "number" && Number.isFinite(item)) {
@@ -72,7 +321,7 @@ function listToText(value: unknown, separator = ", "): string | undefined {
 }
 
 function pickText(record: Record<string, unknown>, paths: string[], separator = ", "): string | undefined {
-  const direct = pickString(record, paths);
+  const direct = sanitizeHltvText(pickString(record, paths));
   if (direct) {
     return direct;
   }
@@ -89,7 +338,7 @@ function pickText(record: Record<string, unknown>, paths: string[], separator = 
 }
 
 function parseScore(record: Record<string, unknown>): string | undefined {
-  const direct = pickString(record, ["score", "result", "scoreline"]);
+  const direct = sanitizeHltvText(pickString(record, ["score", "result", "scoreline"]));
   if (direct) {
     return direct;
   }
@@ -152,7 +401,7 @@ export function normalizeTeamProfile(
   raw: unknown,
   fallback: ResolvedTeamEntity
 ): TeamProfile {
-  const record = asRecord(raw);
+  const record = unwrapPrimaryRecord(raw);
   if (!record) {
     return {
       id: fallback.id,
@@ -168,13 +417,11 @@ export function normalizeTeamProfile(
 
   return {
     id: pickNumber(record, ["id", "team_id", "teamId"]) ?? fallback.id,
-    name: pickString(record, ["name", "team_name", "teamName", "team"]) ?? fallback.name,
+    name: sanitizeHltvText(pickString(record, ["name", "team_name", "teamName", "team"])) ?? fallback.name,
     slug: parsedLink.slug ?? fallback.slug,
-    country:
-      pickString(record, ["country", "country_code", "countryCode", "country.name", "country.code"]) ??
-      fallback.country,
+    country: pickCountry(record, ["country", "country_code", "countryCode", "country.name", "country.code"]) ?? fallback.country,
     rank: pickLooseNumber(record, ["rank", "world_rank", "worldRank", "ranking"]) ?? fallback.rank,
-    raw_summary: pickString(record, ["summary", "description"])
+    raw_summary: sanitizeHltvText(pickString(record, ["summary", "description"]))
   };
 }
 
@@ -182,7 +429,7 @@ export function normalizePlayerProfile(
   raw: unknown,
   fallback: ResolvedPlayerEntity
 ): PlayerProfile {
-  const record = asRecord(raw);
+  const record = unwrapPrimaryRecord(raw);
   if (!record) {
     return {
       id: fallback.id,
@@ -198,43 +445,54 @@ export function normalizePlayerProfile(
 
   return {
     id: pickNumber(record, ["id", "player_id", "playerId"]) ?? fallback.id,
-    name: pickString(record, ["name", "player_name", "playerName", "player", "nick"]) ?? fallback.name,
+    name: buildPlayerName(record, fallback.name),
     slug: parsedLink.slug ?? fallback.slug,
     team:
-      pickString(record, ["team", "team_name", "teamName", "current_team", "team.name"]) ??
-      firstString(pickArray(record, ["team"])) ??
+      sanitizeHltvText(pickString(record, ["team", "team_name", "teamName", "current_team", "team.name"])) ??
+      firstNamedValue(pickArray(record, ["team"])) ??
       fallback.team,
-    country:
-      pickString(record, ["country", "country_code", "countryCode", "country.name", "flag"]) ??
-      fallback.country,
-    raw_summary: pickString(record, ["summary", "description", "bio"])
+    country: pickCountry(record, ["country", "country_code", "countryCode", "country.name", "flag", "img"]) ?? fallback.country,
+    raw_summary: sanitizeHltvText(pickString(record, ["summary", "description", "bio"]))
   };
 }
 
-export function normalizeOverview(raw: unknown): Record<string, string | number> {
-  const record = asRecord(raw);
-  if (!record) {
+export function normalizeOverview(...rawSources: unknown[]): Record<string, string | number> {
+  const containers = compact(
+    rawSources.flatMap((rawSource) => {
+      const record = unwrapPrimaryRecord(rawSource);
+      if (!record) {
+        return [];
+      }
+
+      return compact([
+        record,
+        asRecord(record.summary),
+        asRecord(pickValue(record, ["summary.summary_stats", "summary_stats"])),
+        asRecord(record.player_statistics),
+        asRecord(record.role_stats),
+        asRecord(record.stats),
+        flattenMetricArray(record.player_statistics),
+        flattenMetricArray(record.stats),
+        flattenMetricArray(pickValue(record, ["summary.summary_stats", "summary_stats"]))
+      ]);
+    })
+  );
+
+  if (!containers.length) {
     return {};
   }
 
-  const containers = compact([
-    record,
-    asRecord(record.summary),
-    asRecord(record.player_statistics),
-    asRecord(record.role_stats),
-    asRecord(record.stats)
-  ]);
-
   const keyMap: Record<string, string[]> = {
-    rating: ["rating", "rating_2.0", "rating2"],
+    rating: ["rating", "rating_2.0", "rating2", "rating 2.0", "rating_3.0", "rating3", "rating 3.0"],
     maps: ["maps", "maps_played"],
     kills: ["kills", "total_kills"],
     deaths: ["deaths", "total_deaths"],
-    kd_diff: ["kd_diff", "kill_death_difference"],
+    kd_diff: ["kd_diff", "kill_death_difference", "k-d diff", "kd diff"],
     headshots: ["headshots", "headshot_percentage", "hs"],
     adr: ["adr"],
     kast: ["kast"],
-    impact: ["impact"]
+    impact: ["impact"],
+    firepower: ["firepower"]
   };
 
   const entries = compact(
@@ -242,7 +500,7 @@ export function normalizeOverview(raw: unknown): Record<string, string | number>
       for (const container of containers) {
         const rawValue = pickValue(container, paths);
         if (typeof rawValue === "number" || typeof rawValue === "string") {
-          return [normalizedKey, typeof rawValue === "string" ? rawValue.trim() : rawValue] as const;
+          return [normalizedKey, typeof rawValue === "string" ? sanitizeHltvText(rawValue) ?? rawValue.trim() : rawValue] as const;
         }
       }
 
@@ -255,14 +513,18 @@ export function normalizeOverview(raw: unknown): Record<string, string | number>
 
 export function normalizeMatches(rawItems: unknown[], perspective?: string): NormalizedMatch[] {
   return compact(
-    rawItems.map((item) => {
-      const record = asRecord(item);
+    expandMatchItems(rawItems).map((record) => {
+      const link = pickString(record, ["link", "url"]);
       if (!record) {
         return undefined;
       }
 
-      const team1 = pickString(record, ["team1", "team1_name", "team1.name", "team1Name"]);
-      const team2 = pickString(record, ["team2", "team2_name", "team2.name", "team2Name"]);
+      const team1 =
+        unwrapEntityName(pickValue(record, ["team1"])) ??
+        pickString(record, ["team1_name", "team1.name", "team1Name"]);
+      const team2 =
+        unwrapEntityName(pickValue(record, ["team2"])) ??
+        pickString(record, ["team2_name", "team2.name", "team2Name"]);
       const team1Id = pickNumber(record, ["team1_id", "team1Id", "team1.id", "team1.team_id"]);
       const team2Id = pickNumber(record, ["team2_id", "team2Id", "team2.id", "team2.team_id"]);
       const opponent =
@@ -271,30 +533,38 @@ export function normalizeMatches(rawItems: unknown[], perspective?: string): Nor
       const opponentId =
         pickNumber(record, ["opponent_id", "opponentId", "opponent.id", "opponent.team_id"]) ??
         (perspective && team1 === perspective ? team2Id : perspective && team2 === perspective ? team1Id : undefined);
-      const scheduled = normalizeDateTime(
-        pickString(record, ["scheduled_at", "date", "datetime", "time", "timestamp", "match_time"])
+      const scheduled = buildDateTimeCandidate(
+        record,
+        ["date", "scheduled_date", "match_date"],
+        ["hour", "time", "match_time"],
+        ["scheduled_at", "datetime", "timestamp"]
       );
-      const playedAt = normalizeDateTime(
-        pickString(record, ["played_at", "playedAt", "finished_at", "date", "datetime", "time", "timestamp"])
+      const playedAt = buildDateTimeCandidate(
+        record,
+        ["date", "played_date", "match_date"],
+        ["hour", "time", "match_time"],
+        ["played_at", "playedAt", "finished_at", "datetime", "timestamp"]
       );
       const result = parseOutcome(record, perspective);
       const score = parseScore(record);
 
+      const hasOutcome = Boolean(score || playedAt);
+
       return {
-        match_id: pickNumber(record, ["id", "match_id", "matchId"]),
+        match_id: pickNumber(record, ["id", "match_id", "matchId"]) ?? parseMatchIdFromLink(link),
         team1_id: team1Id,
         team2_id: team2Id,
         opponent_id: opponentId,
         team1,
         team2,
         opponent,
-        event: pickString(record, ["event", "event_name", "eventName", "event.name", "event_title"]),
-        result: score || playedAt ? result ?? "unknown" : "scheduled",
+        event: sanitizeHltvText(pickString(record, ["event", "event_name", "eventName", "event.name", "event_title"])),
+        result: hasOutcome ? result ?? "unknown" : "scheduled",
         score,
-        winner: pickString(record, ["winner", "winner_name", "winnerName", "winner.name"]),
-        best_of: pickString(record, ["best_of", "bestOf", "format"]),
-        played_at: score || playedAt ? playedAt : undefined,
-        scheduled_at: score || playedAt ? undefined : scheduled,
+        winner: sanitizeHltvText(pickString(record, ["winner", "winner_name", "winnerName", "winner.name"])),
+        best_of: sanitizeHltvText(pickString(record, ["best_of", "bestOf", "format", "meta"])),
+        played_at: hasOutcome ? playedAt : undefined,
+        scheduled_at: hasOutcome ? undefined : scheduled,
         map_text: pickText(record, ["map", "maps", "map_text", "mapText"])
       };
     })
@@ -321,7 +591,9 @@ export function normalizeResults(rawItems: unknown[]): NormalizedMatch[] {
 export function normalizeUpcomingMatches(rawItems: unknown[]): NormalizedMatch[] {
   return normalizeMatches(rawItems).map((item) => ({
     ...item,
-    result: "scheduled"
+    result: "scheduled",
+    played_at: undefined,
+    scheduled_at: item.scheduled_at ?? item.played_at
   }));
 }
 
@@ -333,38 +605,91 @@ export function normalizeNews(rawItems: unknown[]): NewsItem[] {
         return undefined;
       }
 
-      const title = pickString(record, ["title", "headline", "name"]);
+      const title = sanitizeHltvText(pickString(record, ["title", "headline", "name"]));
       if (!title) {
         return undefined;
       }
 
       return {
         title,
-        link: pickString(record, ["link", "url"]),
+        link: sanitizeHltvText(pickString(record, ["link", "url"])),
         published_at: normalizeDateTime(
           pickString(record, ["published_at", "publishedAt", "date", "datetime", "timestamp"])
         ),
-        summary_hint: pickString(record, ["summary", "description", "teaser"]),
-        tag: pickString(record, ["tag", "topic", "category"])
+        summary_hint: sanitizeHltvText(pickString(record, ["summary", "description", "teaser"])),
+        tag: sanitizeHltvText(pickString(record, ["tag", "topic", "category"]))
       };
     })
   );
 }
 
+function splitHighlightText(value: string | undefined): string[] {
+  const normalized = sanitizeHltvText(value, { preserveNewlines: true });
+  if (!normalized) {
+    return [];
+  }
+
+  const stripHeader = (line: string): string =>
+    line
+      .replace(/^(?:mvp\s+winner\s+at|winner\s+at|won\s+at|trophy)\s*:?[\s-]*/i, "")
+      .trim();
+
+  const splitFlattenedEventList = (line: string): string[] => {
+    const chunks = Array.from(line.matchAll(/.*?\b\d{4}\b(?=\s+[A-Z#]|$)/g))
+      .map((match) => sanitizeHltvText(match[0]))
+      .filter((item): item is string => Boolean(item));
+
+    if (!chunks.length) {
+      return line ? [line] : [];
+    }
+
+    const consumed = chunks.join(" ").length;
+    const remainder = sanitizeHltvText(line.slice(consumed));
+    return remainder ? [...chunks, remainder] : chunks;
+  };
+
+  const lines = normalized
+    .split("\n")
+    .map((line) => sanitizeHltvText(line))
+    .map((line) => (line ? stripHeader(line) : undefined))
+    .filter((line): line is string => Boolean(line));
+
+  if (!lines.length) {
+    return [];
+  }
+
+  if (lines.length === 1) {
+    return splitFlattenedEventList(lines[0]);
+  }
+
+  return lines;
+}
+
 export function collectRecentHighlights(rawPlayer: unknown, rawOverview: unknown): string[] {
-  const playerRecord = asRecord(rawPlayer);
-  const normalizedOverview = normalizeOverview(rawOverview);
+  const playerRecord = unwrapPrimaryRecord(rawPlayer);
+  const normalizedOverview = normalizeOverview(rawOverview, rawPlayer);
   const notes = new Set<string>();
 
   const achievements = playerRecord ? pickArray(playerRecord, ["achievements", "highlights", "trophies"]) : undefined;
   for (const item of achievements ?? []) {
     if (typeof item === "string") {
-      notes.add(item);
+      for (const highlight of splitHighlightText(item)) {
+        notes.add(highlight);
+      }
     } else {
       const record = asRecord(item);
-      const value = record ? pickString(record, ["title", "name", "text"]) : undefined;
-      if (value) {
-        notes.add(value);
+      const rawValue = record ? pickString(record, ["title", "name", "text", "event", "achievement"]) : undefined;
+      const fallbackValue = record
+        ? [
+            sanitizeHltvText(pickString(record, ["place"])),
+            sanitizeHltvText(pickString(record, ["event"])),
+            sanitizeHltvText(pickString(record, ["year"]))
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : undefined;
+      for (const highlight of splitHighlightText(rawValue ?? fallbackValue)) {
+          notes.add(highlight);
       }
     }
   }

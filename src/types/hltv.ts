@@ -48,7 +48,7 @@ export interface NewsDigestQuery {
   limit?: number;
   tag?: string;
   year?: number;
-  month?: number;
+  month?: number | string;
   timezone?: string;
 }
 

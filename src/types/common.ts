@@ -17,6 +17,7 @@ export interface ToolMeta {
   ttl_sec: number;
   schema_version: string;
   partial: boolean;
+  notes?: string[];
   stale?: boolean;
 }
 
