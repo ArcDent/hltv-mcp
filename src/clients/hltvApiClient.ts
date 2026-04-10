@@ -1,6 +1,6 @@
 import { AppError, isAppError } from "../errors/appError.js";
 import { ensureArray } from "../utils/object.js";
-import { slugify } from "../utils/strings.js";
+import { slugify, toEnglishMonthName } from "../utils/strings.js";
 
 export interface HltvApiClientOptions {
   baseUrl: string;
@@ -79,8 +79,9 @@ export class HltvApiClient {
     return ensureArray(payload);
   }
 
-  async getNews(year?: number, month?: number): Promise<unknown[]> {
-    const path = year && month ? `/api/v1/news/${year}/${month}` : "/api/v1/news";
+  async getNews(year?: number, month?: number | string): Promise<unknown[]> {
+    const normalizedMonth = toEnglishMonthName(month);
+    const path = year && normalizedMonth ? `/api/v1/news/${year}/${encodeURIComponent(normalizedMonth)}` : "/api/v1/news";
     const payload = await this.requestJson(path);
     return ensureArray(payload);
   }
