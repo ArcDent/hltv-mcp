@@ -33,35 +33,51 @@ export function pickValue(record: PlainRecord, paths: string[]): unknown {
 }
 
 export function pickString(record: PlainRecord, paths: string[]): string | undefined {
-  const value = pickValue(record, paths);
-  if (typeof value === "string") {
-    return value.trim();
-  }
+  for (const path of paths) {
+    const value = getPath(record, path);
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+      continue;
+    }
 
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
   }
 
   return undefined;
 }
 
 export function pickNumber(record: PlainRecord, paths: string[]): number | undefined {
-  const value = pickValue(record, paths);
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
+  for (const path of paths) {
+    const value = getPath(record, path);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
 
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
   }
 
   return undefined;
 }
 
 export function pickArray(record: PlainRecord, paths: string[]): unknown[] | undefined {
-  const value = pickValue(record, paths);
-  return Array.isArray(value) ? value : undefined;
+  for (const path of paths) {
+    const value = getPath(record, path);
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 export function ensureArray(value: unknown): unknown[] {

@@ -16,12 +16,14 @@ import type {
   TeamRecentQuery,
   UpcomingMatchesQuery
 } from "../types/hltv.js";
-import { nowIso } from "../utils/time.js";
-import { includesIgnoreCase } from "../utils/strings.js";
+import { dateKeyInTimezone, dateTimeToTimestamp, nowIso, todayDateKey } from "../utils/time.js";
+import { includesIgnoreCase, parseHltvEntityLink, sanitizeHltvText } from "../utils/strings.js";
 import { HltvApiClient } from "../clients/hltvApiClient.js";
 import { PlayerResolver } from "../resolvers/playerResolver.js";
 import { TeamResolver } from "../resolvers/teamResolver.js";
 import { buildSlugCandidates, entityAliases, normalizeLookupName, uniqueStrings } from "../resolvers/entityIdentity.js";
+import { asRecord, pickArray, pickNumber, pickString } from "../utils/object.js";
+import { expandTeamAliases, matchEventName, matchTeamNames } from "../utils/localizedNames.js";
 import {
   collectRecentHighlights,
   normalizeMatches,
@@ -33,6 +35,36 @@ import {
   normalizeUpcomingMatches,
   splitTeamMatches
 } from "./hltvNormalizer.js";
+
+interface TeamInferenceCandidate {
+  id?: number;
+  name?: string;
+  slug?: string;
+  appearances: number;
+  aliases?: string[];
+}
+
+const PRIORITY_TEAM_QUERIES: TeamInferenceCandidate[] = [
+  { id: 9565, name: "Vitality", slug: "vitality", appearances: 0 },
+  { id: 7020, name: "Spirit", slug: "spirit", aliases: ["Team Spirit"], appearances: 0 },
+  { id: 4608, name: "Natus Vincere", slug: "natus-vincere", aliases: ["NaVi", "NAVI"], appearances: 0 },
+  { id: 4494, name: "MOUZ", slug: "mouz", appearances: 0 },
+  { id: 6667, name: "FaZe", slug: "faze", aliases: ["FaZe Clan"], appearances: 0 },
+  { id: 5995, name: "G2", slug: "g2", aliases: ["G2 Esports"], appearances: 0 },
+  { id: 11283, name: "Falcons", slug: "falcons", appearances: 0 },
+  { id: 6665, name: "Astralis", slug: "astralis", appearances: 0 },
+  { id: 5378, name: "Virtus.pro", slug: "virtuspro", aliases: ["VP"], appearances: 0 },
+  { id: 5973, name: "Liquid", slug: "liquid", aliases: ["Team Liquid"], appearances: 0 },
+  { id: 8297, name: "FURIA", slug: "furia", appearances: 0 },
+  { id: 11861, name: "Aurora", slug: "aurora", appearances: 0 },
+  { id: 7175, name: "HEROIC", slug: "heroic", appearances: 0 },
+  { id: 12467, name: "PARIVISION", slug: "parivision", appearances: 0 },
+  { id: 4914, name: "3DMAX", slug: "3dmax", appearances: 0 },
+  { id: 4773, name: "paiN", slug: "pain", appearances: 0 },
+  { id: 9928, name: "GamerLegion", slug: "gamerlegion", appearances: 0 },
+  { id: 5005, name: "Complexity", slug: "complexity", appearances: 0 },
+  { id: 4411, name: "Ninjas in Pyjamas", slug: "ninjas-in-pyjamas", aliases: ["NIP"], appearances: 0 }
+];
 
 export class HltvFacade {
   constructor(
@@ -137,6 +169,7 @@ export class HltvFacade {
       const upcoming_matches = normalizedQuery.include_upcoming
         ? split.upcoming_matches.slice(0, normalizedQuery.limit)
         : [];
+      const notes = this.collectTeamRecentNotes(profile, normalizedMatches, recent_results, upcoming_matches);
 
       const summary_stats = this.buildRecordStats(recent_results);
 
@@ -149,7 +182,10 @@ export class HltvFacade {
           upcoming_matches,
           summary_stats
         },
-        meta: this.createMeta(this.config.teamRecentCacheTtlSec),
+        meta: this.createMeta(this.config.teamRecentCacheTtlSec, {
+          partial: notes.length > 0,
+          notes
+        }),
         error: null
       };
     });
@@ -179,21 +215,39 @@ export class HltvFacade {
         this.client.getPlayerOverview(resolved.id, resolved.slug)
       ]);
 
-      const profile = normalizePlayerProfile(playerDetail, resolved);
-      const overview = normalizeOverview(playerOverview);
-      const recent_matches = normalizeMatches([playerDetail], profile.name).slice(0, normalizedQuery.limit);
-      const recent_highlights = collectRecentHighlights(playerDetail, playerOverview);
+      const inferredTeam = await this.inferPlayerTeam(resolved, playerDetail);
+      const resolvedEntity = inferredTeam
+        ? this.playerResolver.remember({
+            ...resolved,
+            team: inferredTeam.name
+          })
+        : resolved;
+      const profile = inferredTeam
+        ? normalizePlayerProfile(playerDetail, {
+            ...resolvedEntity,
+            team: inferredTeam.name
+          })
+        : normalizePlayerProfile(playerDetail, resolvedEntity);
+      const overview = normalizeOverview(playerOverview, playerDetail);
+      const recent_matches = normalizeMatches([playerDetail], profile.name)
+        .filter((item) => item.score || item.played_at)
+        .slice(0, normalizedQuery.limit);
+      const recent_highlights = collectRecentHighlights(playerDetail, playerOverview).slice(0, normalizedQuery.limit);
+      const notes = this.collectPlayerRecentNotes(profile, overview, recent_highlights, recent_matches, inferredTeam?.name);
 
       return {
         query: normalizedQuery,
-        resolved_entity: resolved,
+        resolved_entity: resolvedEntity,
         data: {
           profile,
           overview,
           recent_matches,
           recent_highlights
         },
-        meta: this.createMeta(this.config.playerRecentCacheTtlSec),
+        meta: this.createMeta(this.config.playerRecentCacheTtlSec, {
+          partial: notes.length > 0,
+          notes
+        }),
         error: null
       };
     });
@@ -213,14 +267,30 @@ export class HltvFacade {
     return this.withCache(cacheKey, this.config.resultsCacheTtlSec, normalizedQuery, async () => {
       const teamFilter = await this.resolveOptionalTeamFilter(normalizedQuery.team_id, normalizedQuery.team);
       const rawResults = await this.client.getRecentResults();
-      const items = normalizeResults(rawResults)
+      const parsedItems = normalizeResults(rawResults);
+      const windowedItems = this.applyTimeWindow(parsedItems, normalizedQuery.days, false);
+      const items = windowedItems
         .filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event))
         .slice(0, normalizedQuery.limit);
+      const notes = this.collectMatchQueryNotes({
+        parsedItems,
+        windowedItems,
+        filteredItems: items,
+        teamFilter,
+        event: normalizedQuery.event,
+        days: normalizedQuery.days,
+        scheduled: false,
+        todayOnly: false,
+        timezone: normalizedQuery.timezone
+      });
 
       return {
         query: normalizedQuery,
         items,
-        meta: this.createMeta(this.config.resultsCacheTtlSec),
+        meta: this.createMeta(this.config.resultsCacheTtlSec, {
+          partial: notes.length > 0,
+          notes
+        }),
         error: null
       };
     });
@@ -229,27 +299,52 @@ export class HltvFacade {
   async getUpcomingMatches(
     query: UpcomingMatchesQuery
   ): Promise<ToolResponse<never, NormalizedMatch>> {
+    const todayOnly =
+      query.team_id === undefined &&
+      !query.team?.trim() &&
+      !query.event?.trim() &&
+      query.limit === undefined &&
+      query.days === undefined;
     const normalizedQuery = {
       team_id: query.team_id,
       team: query.team,
       event: query.event,
-      limit: query.limit ?? this.config.defaultResultLimit,
-      days: query.days ?? 7,
-      timezone: query.timezone ?? this.config.defaultTimezone
+      limit: todayOnly ? undefined : query.limit ?? this.config.defaultResultLimit,
+      days: todayOnly ? undefined : query.days ?? 7,
+      timezone: query.timezone ?? this.config.defaultTimezone,
+      today_only: todayOnly
     };
     const cacheKey = `matches_upcoming:${JSON.stringify(normalizedQuery)}`;
 
     return this.withCache(cacheKey, this.config.matchesCacheTtlSec, normalizedQuery, async () => {
       const teamFilter = await this.resolveOptionalTeamFilter(normalizedQuery.team_id, normalizedQuery.team);
       const rawMatches = await this.client.getUpcomingMatches();
-      const items = normalizeUpcomingMatches(rawMatches)
-        .filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event))
-        .slice(0, normalizedQuery.limit);
+      const parsedItems = normalizeUpcomingMatches(rawMatches);
+      const windowedItems = normalizedQuery.today_only
+        ? this.filterMatchesToToday(parsedItems, normalizedQuery.timezone)
+        : this.applyTimeWindow(parsedItems, normalizedQuery.days ?? 7, true);
+      const filteredItems = windowedItems.filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event));
+      const items =
+        normalizedQuery.limit !== undefined ? filteredItems.slice(0, normalizedQuery.limit) : filteredItems;
+      const notes = this.collectMatchQueryNotes({
+        parsedItems,
+        windowedItems,
+        filteredItems: items,
+        teamFilter,
+        event: normalizedQuery.event,
+        days: normalizedQuery.days,
+        scheduled: true,
+        todayOnly: normalizedQuery.today_only,
+        timezone: normalizedQuery.timezone
+      });
 
       return {
         query: normalizedQuery,
         items,
-        meta: this.createMeta(this.config.matchesCacheTtlSec),
+        meta: this.createMeta(this.config.matchesCacheTtlSec, {
+          partial: notes.length > 0,
+          notes
+        }),
         error: null
       };
     });
@@ -267,7 +362,8 @@ export class HltvFacade {
 
     return this.withCache(cacheKey, this.config.newsCacheTtlSec, normalizedQuery, async () => {
       const rawNews = await this.client.getNews(normalizedQuery.year, normalizedQuery.month);
-      const items = normalizeNews(rawNews)
+      const normalizedItems = normalizeNews(rawNews);
+      const items = normalizedItems
         .filter((item) => {
           if (!normalizedQuery.tag) {
             return true;
@@ -280,11 +376,22 @@ export class HltvFacade {
           );
         })
         .slice(0, normalizedQuery.limit);
+      const notes = this.collectNewsNotes({
+        rawNews,
+        normalizedItems,
+        filteredItems: items,
+        tag: normalizedQuery.tag,
+        year: normalizedQuery.year,
+        month: normalizedQuery.month
+      });
 
       return {
         query: normalizedQuery,
         items,
-        meta: this.createMeta(this.config.newsCacheTtlSec),
+        meta: this.createMeta(this.config.newsCacheTtlSec, {
+          partial: notes.length > 0,
+          notes
+        }),
         error: null
       };
     });
@@ -423,7 +530,7 @@ export class HltvFacade {
     event?: string
   ): boolean {
     const teamMatches = !teamFilter || this.matchTeamFilter(item, teamFilter);
-    const eventMatches = !event || includesIgnoreCase(item.event, event);
+    const eventMatches = !event || matchEventName(item.event, event);
     return teamMatches && eventMatches;
   }
 
@@ -539,40 +646,461 @@ export class HltvFacade {
     teamId?: number,
     teamName?: string
   ): Promise<{ id?: number; names: string[] } | undefined> {
-    if (!teamId && !teamName) {
+    const normalizedTeamName = teamName?.trim();
+
+    if (!teamId && !normalizedTeamName) {
       return undefined;
     }
 
     if (teamId) {
-      const resolved = await this.resolveTeamById(teamId, teamName, false);
+      const resolved = await this.resolveTeamById(teamId, normalizedTeamName, false);
       if (resolved) {
         return {
           id: resolved.id,
-          names: entityAliases(resolved)
+          names: uniqueStrings([...entityAliases(resolved), ...expandTeamAliases(normalizedTeamName)])
         };
       }
 
       return {
         id: teamId,
-        names: uniqueStrings([teamName])
+        names: uniqueStrings([normalizedTeamName, ...expandTeamAliases(normalizedTeamName)])
       };
     }
 
-    const candidates = await this.teamResolver.resolve(teamName!, false, 10);
-    if (!candidates.length) {
-      throw new AppError("ENTITY_NOT_FOUND", `No team matched '${teamName}'`, {
+    const localizedAliases = expandTeamAliases(normalizedTeamName);
+    const resolveCandidates = uniqueStrings([normalizedTeamName, ...localizedAliases]);
+
+    for (const candidateName of resolveCandidates) {
+      const candidates = await this.teamResolver.resolve(candidateName, false, 10);
+      if (!candidates.length) {
+        continue;
+      }
+
+      return {
+        id: candidates[0].id,
+        names: uniqueStrings([...entityAliases(candidates[0]), ...localizedAliases])
+      };
+    }
+
+    if (!localizedAliases.length) {
+      throw new AppError("ENTITY_NOT_FOUND", `No team matched '${normalizedTeamName}'`, {
         retryable: false,
         details: {
           team_id: teamId,
-          team_name: teamName
+          team_name: normalizedTeamName
         }
       });
     }
 
     return {
-      id: candidates[0].id,
-      names: entityAliases(candidates[0])
+      names: localizedAliases
     };
+  }
+
+  private async inferPlayerTeam(
+    player: ResolvedPlayerEntity,
+    rawPlayerDetail: unknown
+  ): Promise<ResolvedTeamEntity | undefined> {
+    const existingTeam = normalizePlayerProfile(rawPlayerDetail, player).team;
+    if (existingTeam) {
+      return undefined;
+    }
+
+    const cacheKey = `player_team_inference:${player.id}`;
+    const cached = this.cache.get<ResolvedTeamEntity | null>(cacheKey);
+    if (cached !== undefined) {
+      return cached ?? undefined;
+    }
+
+    try {
+      const priorityCandidates = this.buildPriorityTeamCandidates();
+      const priorityMatch = await this.findPlayerTeamFromCandidates(player, priorityCandidates, 3);
+      if (priorityMatch) {
+        this.cache.set(cacheKey, priorityMatch, this.config.playerRecentCacheTtlSec);
+        return priorityMatch;
+      }
+
+      const [recentResults, upcomingMatches] = await Promise.all([
+        this.client.getRecentResults(),
+        this.client.getUpcomingMatches()
+      ]);
+      const activeCandidates = this.buildFallbackTeamCandidates(
+        this.collectActiveTeamCandidates([
+        ...normalizeResults(recentResults),
+        ...normalizeUpcomingMatches(upcomingMatches)
+        ])
+      );
+
+      const inferred = await this.findPlayerTeamFromCandidates(player, activeCandidates, 6);
+      this.cache.set(cacheKey, inferred ?? null, this.config.playerRecentCacheTtlSec);
+      return inferred;
+    } catch (error) {
+      if (isAppError(error)) {
+        this.cache.set(cacheKey, null, Math.min(this.config.playerRecentCacheTtlSec, 60));
+        return undefined;
+      }
+
+      throw error;
+    }
+  }
+
+  private async findPlayerTeamFromCandidates(
+    player: ResolvedPlayerEntity,
+    candidates: TeamInferenceCandidate[],
+    concurrency = 6
+  ): Promise<ResolvedTeamEntity | undefined> {
+    if (!candidates.length) {
+      return undefined;
+    }
+
+    let cursor = 0;
+    let found: ResolvedTeamEntity | undefined;
+    const workerCount = Math.min(Math.max(concurrency, 1), candidates.length);
+
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (found === undefined) {
+        const currentIndex = cursor;
+        cursor += 1;
+        if (currentIndex >= candidates.length) {
+          return;
+        }
+
+        const candidate = candidates[currentIndex];
+        const resolvedTeam = await this.resolveActiveTeamCandidate(candidate);
+        if (!resolvedTeam) {
+          continue;
+        }
+
+        const detail = await this.getTeamDetailCached(resolvedTeam);
+        if (!detail || !this.teamRosterContainsPlayer(detail, player)) {
+          continue;
+        }
+
+        const profile = normalizeTeamProfile(detail, resolvedTeam);
+        found = this.teamResolver.remember(
+          {
+            type: "team",
+            id: profile.id,
+            name: profile.name,
+            slug: profile.slug,
+            country: profile.country,
+            rank: profile.rank,
+            aliases: uniqueStrings([candidate.name, resolvedTeam.name, resolvedTeam.slug, profile.name, profile.slug])
+          },
+          uniqueStrings([candidate.name])
+        );
+        return;
+      }
+    });
+
+    await Promise.all(workers);
+    return found;
+  }
+
+  private buildPriorityTeamCandidates(): TeamInferenceCandidate[] {
+    return PRIORITY_TEAM_QUERIES.map((team, index) => ({
+      ...team,
+      appearances: 10_000 - index
+    }));
+  }
+
+  private buildFallbackTeamCandidates(activeCandidates: TeamInferenceCandidate[]): TeamInferenceCandidate[] {
+    const seenNames = new Set(
+      PRIORITY_TEAM_QUERIES.flatMap((team) =>
+        uniqueStrings([team.name, team.slug, ...(team.aliases ?? [])]).map((value) => normalizeLookupName(value).slug)
+      )
+    );
+    const seenIds = new Set(PRIORITY_TEAM_QUERIES.map((team) => team.id));
+
+    return activeCandidates.filter((candidate) => {
+      if (candidate.id !== undefined && seenIds.has(candidate.id)) {
+        return false;
+      }
+
+      const normalizedName = sanitizeHltvText(candidate.name);
+      if (!normalizedName) {
+        return true;
+      }
+
+      return !seenNames.has(normalizeLookupName(normalizedName).slug);
+    });
+  }
+
+  private async resolveActiveTeamCandidate(candidate: TeamInferenceCandidate): Promise<ResolvedTeamEntity | undefined> {
+    if (candidate.id !== undefined && candidate.slug) {
+      const cached = this.teamResolver.getById(candidate.id);
+      if (cached) {
+        return cached;
+      }
+
+      return this.teamResolver.remember(
+        {
+          type: "team",
+          id: candidate.id,
+          name: candidate.name ?? candidate.slug,
+          slug: candidate.slug,
+          aliases: uniqueStrings([candidate.name, candidate.slug, ...(candidate.aliases ?? [])])
+        },
+        uniqueStrings(candidate.aliases ?? [])
+      );
+    }
+
+    if (candidate.id !== undefined) {
+      try {
+        return await this.resolveTeamById(candidate.id, candidate.name, false);
+      } catch (error) {
+        if (isAppError(error) && ["UPSTREAM_NOT_FOUND", "UPSTREAM_TIMEOUT", "UPSTREAM_UNAVAILABLE"].includes(error.code)) {
+          return undefined;
+        }
+
+        throw error;
+      }
+    }
+
+    const rawName = sanitizeHltvText(candidate.name);
+    if (!rawName) {
+      return undefined;
+    }
+
+    const cacheKey = `active_team_candidate:${normalizeLookupName(rawName).slug}`;
+    const cached = this.cache.get<ResolvedTeamEntity | null>(cacheKey);
+    if (cached !== undefined) {
+      return cached ?? undefined;
+    }
+
+    try {
+      const searchResults = await this.client.searchTeams(rawName);
+      const normalizedCandidates = searchResults
+        .map((item) => this.normalizeTeamSearchCandidate(item, rawName))
+        .filter((item): item is ResolvedTeamEntity => Boolean(item))
+        .sort((left, right) => this.scoreNameMatch(right.name, rawName) - this.scoreNameMatch(left.name, rawName));
+
+      const best = normalizedCandidates[0];
+      if (!best) {
+        this.cache.set(cacheKey, null, Math.min(this.config.entityCacheTtlSec, 120));
+        return undefined;
+      }
+
+      const remembered = this.teamResolver.remember(best, [rawName]);
+      this.cache.set(cacheKey, remembered, this.config.entityCacheTtlSec);
+      return remembered;
+    } catch (error) {
+      if (isAppError(error) && ["UPSTREAM_NOT_FOUND", "UPSTREAM_TIMEOUT", "UPSTREAM_UNAVAILABLE"].includes(error.code)) {
+        this.cache.set(cacheKey, null, Math.min(this.config.entityCacheTtlSec, 120));
+        return undefined;
+      }
+
+      throw error;
+    }
+  }
+
+  private normalizeTeamSearchCandidate(raw: unknown, fallbackName: string): ResolvedTeamEntity | undefined {
+    const record = asRecord(raw);
+    if (!record) {
+      return undefined;
+    }
+
+    const link = pickString(record, ["link", "profile_link", "href", "url"]);
+    const parsedLink = parseHltvEntityLink(link, "team");
+    const id = pickNumber(record, ["id", "team_id", "teamId"]) ?? parsedLink.id;
+    const name = sanitizeHltvText(pickString(record, ["name", "team_name", "teamName", "team"])) ?? fallbackName;
+    if (!id || !name) {
+      return undefined;
+    }
+
+    return {
+      type: "team",
+      id,
+      name,
+      slug: sanitizeHltvText(parsedLink.slug) ?? this.client.buildSlug(name, id),
+      country: sanitizeHltvText(pickString(record, ["country", "country_code", "countryCode"])),
+      rank: pickNumber(record, ["rank", "world_rank", "worldRank"]),
+      aliases: uniqueStrings([name, parsedLink.slug, fallbackName])
+    };
+  }
+
+  private scoreNameMatch(candidateName: string, targetName: string): number {
+    const candidate = normalizeLookupName(candidateName);
+    const target = normalizeLookupName(targetName);
+
+    if (candidate.strict === target.strict || candidate.loose === target.loose || candidate.slug === target.slug) {
+      return 1;
+    }
+
+    if (
+      candidate.loose.includes(target.loose) ||
+      target.loose.includes(candidate.loose) ||
+      candidate.strict.includes(target.strict) ||
+      target.strict.includes(candidate.strict)
+    ) {
+      return 0.8;
+    }
+
+    return 0.4;
+  }
+
+  private async getTeamDetailCached(team: ResolvedTeamEntity): Promise<unknown | undefined> {
+    const cacheKey = `team_detail:${team.id}`;
+    const cached = this.cache.get<unknown | null>(cacheKey);
+    if (cached !== undefined) {
+      return cached ?? undefined;
+    }
+
+    try {
+      const detail = await this.client.getTeam(team.id, team.slug);
+      this.cache.set(cacheKey, detail, this.config.entityCacheTtlSec);
+      return detail;
+    } catch (error) {
+      if (isAppError(error) && ["UPSTREAM_NOT_FOUND", "UPSTREAM_TIMEOUT", "UPSTREAM_UNAVAILABLE"].includes(error.code)) {
+        this.cache.set(cacheKey, null, Math.min(this.config.entityCacheTtlSec, 120));
+        return undefined;
+      }
+
+      throw error;
+    }
+  }
+
+  private collectActiveTeamCandidates(matches: NormalizedMatch[]): TeamInferenceCandidate[] {
+    const candidates = new Map<string, TeamInferenceCandidate>();
+
+    const pushCandidate = (id?: number, name?: string) => {
+      const normalizedName = sanitizeHltvText(name);
+      if (id === undefined && !normalizedName) {
+        return;
+      }
+
+      const key = id !== undefined ? `id:${id}` : `name:${normalizeLookupName(normalizedName!).slug || normalizedName!.toLowerCase()}`;
+      const existing = candidates.get(key);
+      if (existing) {
+        existing.appearances += 1;
+        if (!existing.name && normalizedName) {
+          existing.name = normalizedName;
+        }
+        return;
+      }
+
+      candidates.set(key, {
+        id,
+        name: normalizedName,
+        appearances: 1
+      });
+    };
+
+    for (const match of matches) {
+      pushCandidate(match.team1_id, match.team1);
+      pushCandidate(match.team2_id, match.team2);
+    }
+
+    return [...candidates.values()]
+      .sort((left, right) => {
+        if (right.appearances !== left.appearances) {
+          return right.appearances - left.appearances;
+        }
+
+        return String(left.name ?? "").localeCompare(String(right.name ?? ""), "en-US");
+      })
+      .slice(0, 36);
+  }
+
+  private teamRosterContainsPlayer(rawTeam: unknown, player: ResolvedPlayerEntity): boolean {
+    const roster = this.extractRosterMembers(rawTeam);
+    if (!roster.length) {
+      return false;
+    }
+
+    const aliases = uniqueStrings(entityAliases(player));
+    const normalizedAliases = aliases
+      .map((alias) => normalizeLookupName(alias))
+      .filter((alias) => alias.loose.length > 0 || alias.slug.length > 0);
+
+    return roster.some((member) => {
+      if (member.id !== undefined && member.id === player.id) {
+        return true;
+      }
+
+      return member.names.some((name) => {
+        const candidate = normalizeLookupName(name);
+
+        return normalizedAliases.some((alias) => {
+          if (candidate.strict === alias.strict || candidate.loose === alias.loose || candidate.slug === alias.slug) {
+            return true;
+          }
+
+          const candidateLoose = candidate.loose;
+          const aliasLoose = alias.loose;
+          if (!candidateLoose || !aliasLoose) {
+            return false;
+          }
+
+          const candidateSingleToken = candidate.tokens.length === 1 ? candidate.tokens[0] : undefined;
+          const aliasSingleToken = alias.tokens.length === 1 ? alias.tokens[0] : undefined;
+
+          return Boolean(
+            (candidateSingleToken && candidateSingleToken.length >= 3 && alias.tokens.includes(candidateSingleToken)) ||
+              (aliasSingleToken && aliasSingleToken.length >= 3 && candidate.tokens.includes(aliasSingleToken)) ||
+              (candidateLoose.length >= 4 && aliasLoose.includes(candidateLoose)) ||
+              (aliasLoose.length >= 4 && candidateLoose.includes(aliasLoose))
+          );
+        });
+      });
+    });
+  }
+
+  private extractRosterMembers(rawTeam: unknown): Array<{ id?: number; names: string[] }> {
+    const record = this.unwrapPrimaryRecord(rawTeam);
+    if (!record) {
+      return [];
+    }
+
+    const roster = pickArray(record, ["squad", "players", "lineup", "roster"]);
+    if (!roster?.length) {
+      return [];
+    }
+
+    const members: Array<{ id?: number; names: string[] }> = [];
+
+    for (const item of roster) {
+        const member = asRecord(item);
+        if (!member) {
+          continue;
+        }
+
+        const link = pickString(member, ["link", "profile_link", "href", "url"]);
+        const parsedLink = parseHltvEntityLink(link, "player");
+        const names = uniqueStrings([
+          sanitizeHltvText(pickString(member, ["nick"])),
+          sanitizeHltvText(pickString(member, ["name", "player_name", "playerName"])),
+          sanitizeHltvText(pickString(member, ["full_name", "fullName", "real_name", "realName"])),
+          sanitizeHltvText(parsedLink.slug)
+        ]);
+        const id = pickNumber(member, ["id", "player_id", "playerId"]) ?? parsedLink.id;
+
+        if (id === undefined && !names.length) {
+          continue;
+        }
+
+        members.push({
+          id,
+          names
+        });
+    }
+
+    return members;
+  }
+
+  private unwrapPrimaryRecord(raw: unknown): Record<string, unknown> | undefined {
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        const record = asRecord(item);
+        if (record) {
+          return record;
+        }
+      }
+
+      return undefined;
+    }
+
+    return asRecord(raw);
   }
 
   private matchTeamFilter(item: NormalizedMatch, teamFilter: { id?: number; names: string[] }): boolean {
@@ -587,20 +1115,12 @@ export class HltvFacade {
       return false;
     }
 
-    const itemNames = uniqueStrings([item.team1, item.team2, item.opponent]);
-    return teamFilter.names.some((name) => {
-      const target = normalizeLookupName(name);
-      return itemNames.some((candidate) => {
-        const normalized = normalizeLookupName(candidate);
-        return (
-          normalized.strict === target.strict ||
-          normalized.loose === target.loose ||
-          normalized.slug === target.slug ||
-          normalized.loose.includes(target.loose) ||
-          target.loose.includes(normalized.loose)
-        );
-      });
-    });
+    return matchTeamNames([item.team1, item.team2, item.opponent], teamFilter.names);
+  }
+
+  private filterMatchesToToday(matches: NormalizedMatch[], timezone: string): NormalizedMatch[] {
+    const currentDay = todayDateKey(timezone);
+    return matches.filter((item) => dateKeyInTimezone(item.scheduled_at, timezone) === currentDay);
   }
 
   private createMeta(ttlSec: number, overrides: Partial<ToolMeta> = {}): ToolMeta {
@@ -614,6 +1134,193 @@ export class HltvFacade {
       partial: false,
       ...overrides
     };
+  }
+
+  private applyTimeWindow(matches: NormalizedMatch[], days: number, scheduled: boolean): NormalizedMatch[] {
+    const limitMs = days * 24 * 60 * 60 * 1_000;
+    const now = Date.now();
+
+    return matches.filter((item) => {
+      const timeValue = scheduled ? item.scheduled_at : item.played_at;
+      const timestamp = dateTimeToTimestamp(timeValue);
+      if (timestamp === undefined) {
+        return true;
+      }
+
+      if (scheduled) {
+        return timestamp >= now && timestamp <= now + limitMs;
+      }
+
+      return timestamp <= now && timestamp >= now - limitMs;
+    });
+  }
+
+  private collectPlayerRecentNotes(
+    profile: PlayerRecentData["profile"],
+    overview: PlayerRecentData["overview"],
+    recentHighlights: string[],
+    recentMatches: NormalizedMatch[],
+    inferredTeamName?: string
+  ): string[] {
+    const notes: string[] = [];
+
+    if (inferredTeamName) {
+      notes.push(`所属队伍由近期活跃队伍 roster 扫描推断为 ${inferredTeamName}；上游选手详情原本缺失该字段。`);
+    } else if (!profile.team) {
+      notes.push("上游选手详情未提供可识别的所属队伍字段。");
+    }
+
+    if (!profile.country) {
+      notes.push("上游选手详情未提供可识别的国家/地区字段。");
+    }
+
+    if (!Object.keys(overview).length) {
+      notes.push("上游统计接口返回为空或字段结构不包含已识别的统计键。");
+    }
+
+    if (!recentHighlights.length) {
+      notes.push("上游详情/统计中没有可提取的 trophies、highlights 或 rating 信息。");
+    }
+
+    if (!recentMatches.length) {
+      notes.push("当前选手详情响应中未包含可解析的近期比赛记录。");
+    }
+
+    return notes;
+  }
+
+  private collectNewsNotes({
+    rawNews,
+    normalizedItems,
+    filteredItems,
+    tag,
+    year,
+    month
+  }: {
+    rawNews: unknown[];
+    normalizedItems: NewsItem[];
+    filteredItems: NewsItem[];
+    tag?: string;
+    year?: number;
+    month?: number | string;
+  }): string[] {
+    const notes: string[] = [];
+
+    if (!rawNews.length) {
+      notes.push("上游新闻接口当前返回空结果；这不是本地渲染造成的。");
+    }
+
+    if (rawNews.length > 0 && !normalizedItems.length) {
+      notes.push("上游新闻接口返回了数据，但字段结构不包含已识别的标题字段。");
+    }
+
+    if (normalizedItems.length > 0 && !filteredItems.length && tag) {
+      notes.push(`新闻数据存在，但没有条目匹配 tag='${tag}'。`);
+    }
+
+    if (year && month) {
+      notes.push(`参数化新闻请求已按上游要求使用月份文本传递（year=${year}, month=${String(month)}）。`);
+    }
+
+    return notes;
+  }
+
+  private collectTeamRecentNotes(
+    profile: TeamRecentData["profile"],
+    normalizedMatches: NormalizedMatch[],
+    recentResults: NormalizedMatch[],
+    upcomingMatches: NormalizedMatch[]
+  ): string[] {
+    const notes: string[] = [];
+
+    if (!profile.country) {
+      notes.push("上游队伍详情未提供可识别的国家/地区字段。");
+    }
+
+    if (!profile.rank) {
+      notes.push("上游队伍详情未提供可识别的排名字段。");
+    }
+
+    if (!normalizedMatches.length) {
+      notes.push("上游队伍比赛接口未返回可解析的比赛记录。");
+      return notes;
+    }
+
+    if (!recentResults.length) {
+      notes.push("当前队伍比赛数据中没有被识别为已结束的赛果记录。");
+    }
+
+    if (!upcomingMatches.length) {
+      notes.push("当前队伍比赛数据中没有被识别为未来赛程的记录。");
+    }
+
+    return notes;
+  }
+
+  private collectMatchQueryNotes({
+    parsedItems,
+    windowedItems,
+    filteredItems,
+    teamFilter,
+    event,
+    days,
+    scheduled,
+    todayOnly,
+    timezone
+  }: {
+    parsedItems: NormalizedMatch[];
+    windowedItems: NormalizedMatch[];
+    filteredItems: NormalizedMatch[];
+    teamFilter?: { id?: number; names: string[] };
+    event?: string;
+    days?: number;
+    scheduled: boolean;
+    todayOnly?: boolean;
+    timezone: string;
+  }): string[] {
+    const notes: string[] = [];
+    if (filteredItems.length) {
+      return notes;
+    }
+
+    if (!parsedItems.length) {
+      notes.push(scheduled ? "上游未来比赛接口未返回可解析的比赛记录。" : "上游近期结果接口未返回可解析的比赛记录。");
+      return notes;
+    }
+
+    if (!windowedItems.length) {
+      if (todayOnly) {
+        notes.push(`当前为无参数默认模式：仅展示 ${timezone} 时区的今日比赛；今天暂无可展示赛程。`);
+      } else {
+        notes.push(`时间窗口过滤为最近 ${days} 天，但当前没有记录落在该时间范围内。`);
+      }
+      const missingTimeCount = parsedItems.filter((item) => !(scheduled ? item.scheduled_at : item.played_at)).length;
+      if (missingTimeCount > 0) {
+        notes.push(`${missingTimeCount} 条记录缺少可解析时间，无法参与精确时间过滤。`);
+      }
+      return notes;
+    }
+
+    if (teamFilter) {
+      notes.push(`队伍过滤条件未命中任何记录：${teamFilter.names[0] ?? `team_id=${teamFilter.id}`}`);
+    }
+
+    if (event?.trim()) {
+      notes.push(`赛事过滤条件未命中任何记录：${event.trim()}`);
+    }
+
+    if (todayOnly) {
+      notes.push(`当前为无参数默认模式：仅展示 ${timezone} 时区的今日比赛。`);
+    } else {
+      notes.push(`时间窗口过滤为最近 ${days} 天，超出窗口的记录已被排除。`);
+    }
+
+    const missingTimeCount = windowedItems.filter((item) => !(scheduled ? item.scheduled_at : item.played_at)).length;
+    if (missingTimeCount > 0) {
+      notes.push(`${missingTimeCount} 条记录缺少可解析时间，已保留但可能无法按时间精确筛选。`);
+    }
+
+    return notes;
   }
 
   private async withCache<TData, TItem, TResolved>(

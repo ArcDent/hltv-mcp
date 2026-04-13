@@ -43,4 +43,6 @@ hltv_local
 - `hltv_local_hltv_matches_upcoming`
 - `hltv_local_hltv_news_digest`
 
+补充：示例里的 `/match` 模板默认是“无参数查询今日全部比赛”，并尽量输出队伍名/赛事名的中英对照格式。
+
 如果你自己的 MCP 名称不是 `hltv_local`，请把这些前缀一起替换掉。

@@ -8,9 +8,14 @@ import type {
   ResolvedTeamEntity,
   TeamRecentData
 } from "../types/hltv.js";
+import { formatEventDisplayName, formatTeamDisplayName } from "../utils/localizedNames.js";
 
 export class SummaryService {
   constructor(private readonly mode: SummaryMode) {}
+
+  private reasonHint(response: ToolResponse): string {
+    return response.meta.notes?.[0] ? ` 原因：${response.meta.notes[0]}` : "";
+  }
 
   summarizeTeam(response: ToolResponse<TeamRecentData, never, ResolvedTeamEntity>): string {
     if (this.mode === "raw") {
@@ -25,12 +30,15 @@ export class SummaryService {
     const nextOpponent = upcoming_matches[0]?.opponent ?? upcoming_matches[0]?.team2 ?? upcoming_matches[0]?.team1;
     const rankText = profile.rank ? `当前排名约为 #${profile.rank}` : "当前排名信息缺失";
     const recordText = `近况为 ${summary_stats.recent_record}`;
+    const reasonHint = this.reasonHint(response);
+    const profileName = formatTeamDisplayName(profile.name) ?? profile.name;
+    const nextOpponentName = formatTeamDisplayName(nextOpponent) ?? nextOpponent;
 
-    if (nextOpponent) {
-      return `${profile.name} ${rankText}，${recordText}。接下来最值得关注的是对阵 ${nextOpponent} 的比赛，可继续观察其状态延续性。`;
+    if (nextOpponentName) {
+      return `${profileName} ${rankText}，${recordText}。接下来最值得关注的是对阵 ${nextOpponentName} 的比赛，可继续观察其状态延续性。${reasonHint}`;
     }
 
-    return `${profile.name} ${rankText}，${recordText}。目前可用数据表明其近期表现较为稳定，建议结合最近几场比赛继续观察。`;
+    return `${profileName} ${rankText}，${recordText}。目前可用数据表明其近期表现较为稳定，建议结合最近几场比赛继续观察。${reasonHint}`;
   }
 
   summarizePlayer(response: ToolResponse<PlayerRecentData, never, ResolvedPlayerEntity>): string {
@@ -46,8 +54,10 @@ export class SummaryService {
     const rating = overview.rating ?? overview.adr ?? overview.impact;
     const statsText = rating ? `关键指标 ${rating}` : "关键统计数据有限";
     const highlightText = recent_highlights[0] ? `最近亮点包括：${recent_highlights[0]}` : "近期亮点数据有限";
+    const reasonHint = this.reasonHint(response);
+    const teamName = formatTeamDisplayName(profile.team) ?? profile.team;
 
-    return `${profile.name}${profile.team ? `（${profile.team}）` : ""}近期状态概览：${statsText}，${highlightText}。建议在后续比赛中继续关注其稳定输出能力。`;
+    return `${profile.name}${teamName ? `（${teamName}）` : ""}近期状态概览：${statsText}，${highlightText}。建议在后续比赛中继续关注其稳定输出能力。${reasonHint}`;
   }
 
   summarizeResults(response: ToolResponse<never, NormalizedMatch>): string {
@@ -56,10 +66,16 @@ export class SummaryService {
     }
 
     if (response.error || !response.items?.length) {
-      return "当前无法生成结果摘要，请参考下方列表。";
+      return `当前无法生成结果摘要，请参考下方列表。${this.reasonHint(response)}`;
     }
 
-    const focus = response.items.slice(0, 2).map((item) => `${item.team1} vs ${item.team2}`).join("；");
+    const focus = response.items
+      .slice(0, 2)
+      .map(
+        (item) =>
+          `${formatTeamDisplayName(item.team1) ?? item.team1 ?? "TBD"} vs ${formatTeamDisplayName(item.team2) ?? item.team2 ?? "TBD"}${item.event ? `（${formatEventDisplayName(item.event) ?? item.event}）` : ""}`
+      )
+      .join("；");
     return `近期结果中最值得关注的对局包括：${focus}。这些比赛可作为观察当前热门队伍状态与赛事热度的直接参考。`;
   }
 
@@ -69,11 +85,18 @@ export class SummaryService {
     }
 
     if (response.error || !response.items?.length) {
-      return "当前无法生成赛程摘要，请参考下方列表。";
+      return `当前无法生成赛程摘要，请参考下方列表。${this.reasonHint(response)}`;
     }
 
-    const focus = response.items.slice(0, 2).map((item) => `${item.team1} vs ${item.team2}`).join("；");
-    return `接下来赛程中，${focus} 等比赛值得重点关注，适合用来追踪近期强队状态与焦点赛事走势。`;
+    const focus = response.items
+      .slice(0, 2)
+      .map(
+        (item) =>
+          `${formatTeamDisplayName(item.team1) ?? item.team1 ?? "TBD"} vs ${formatTeamDisplayName(item.team2) ?? item.team2 ?? "TBD"}${item.event ? `（${formatEventDisplayName(item.event) ?? item.event}）` : ""}`
+      )
+      .join("；");
+    const lead = response.query.today_only ? "今日赛程中" : "接下来赛程中";
+    return `${lead}，${focus} 等比赛值得重点关注，适合用来追踪近期强队状态与焦点赛事走势。`;
   }
 
   summarizeNews(response: ToolResponse<never, NewsItem>): string {
@@ -82,7 +105,7 @@ export class SummaryService {
     }
 
     if (response.error || !response.items?.length) {
-      return "当前无法生成新闻摘要，请参考下方列表。";
+      return `当前无法生成新闻摘要，请参考下方列表。${this.reasonHint(response)}`;
     }
 
     const focus = response.items.slice(0, 3).map((item) => item.title).join("；");

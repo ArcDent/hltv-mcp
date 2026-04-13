@@ -20,7 +20,7 @@ export const COMMAND_REGISTRY = {
   },
   match: {
     aliases: ["match", "赛程", "m"],
-    description: "查看未来比赛",
+    description: "查看未来比赛（无参默认今日全部）",
     usage: "/Match [team] [event] [count]"
   },
   news: {
@@ -63,7 +63,7 @@ export class CommandHandlers {
     return this.renderer.renderResults(response);
   }
 
-  async match(team?: string, event?: string, count = 5): Promise<string> {
+  async match(team?: string, event?: string, count?: number): Promise<string> {
     const response = await this.facade.getUpcomingMatches({
       team,
       event,
