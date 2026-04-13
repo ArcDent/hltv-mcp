@@ -726,9 +726,10 @@ export class HltvFacade {
       ]);
       const activeCandidates = this.buildFallbackTeamCandidates(
         this.collectActiveTeamCandidates([
-        ...normalizeResults(recentResults),
-        ...normalizeUpcomingMatches(upcomingMatches)
-        ])
+          ...normalizeResults(recentResults),
+          ...normalizeUpcomingMatches(upcomingMatches)
+        ]),
+        16
       );
 
       const inferred = await this.findPlayerTeamFromCandidates(player, activeCandidates, 6);
@@ -804,7 +805,10 @@ export class HltvFacade {
     }));
   }
 
-  private buildFallbackTeamCandidates(activeCandidates: TeamInferenceCandidate[]): TeamInferenceCandidate[] {
+  private buildFallbackTeamCandidates(
+    activeCandidates: TeamInferenceCandidate[],
+    maxCandidates = 36
+  ): TeamInferenceCandidate[] {
     const seenNames = new Set(
       PRIORITY_TEAM_QUERIES.flatMap((team) =>
         uniqueStrings([team.name, team.slug, ...(team.aliases ?? [])]).map((value) => normalizeLookupName(value).slug)
@@ -812,18 +816,20 @@ export class HltvFacade {
     );
     const seenIds = new Set(PRIORITY_TEAM_QUERIES.map((team) => team.id));
 
-    return activeCandidates.filter((candidate) => {
-      if (candidate.id !== undefined && seenIds.has(candidate.id)) {
-        return false;
-      }
+    return activeCandidates
+      .filter((candidate) => {
+        if (candidate.id !== undefined && seenIds.has(candidate.id)) {
+          return false;
+        }
 
-      const normalizedName = sanitizeHltvText(candidate.name);
-      if (!normalizedName) {
-        return true;
-      }
+        const normalizedName = sanitizeHltvText(candidate.name);
+        if (!normalizedName) {
+          return true;
+        }
 
-      return !seenNames.has(normalizeLookupName(normalizedName).slug);
-    });
+        return !seenNames.has(normalizeLookupName(normalizedName).slug);
+      })
+      .slice(0, maxCandidates);
   }
 
   private async resolveActiveTeamCandidate(candidate: TeamInferenceCandidate): Promise<ResolvedTeamEntity | undefined> {
@@ -1167,7 +1173,7 @@ export class HltvFacade {
     if (inferredTeamName) {
       notes.push(`所属队伍由近期活跃队伍 roster 扫描推断为 ${inferredTeamName}；上游选手详情原本缺失该字段。`);
     } else if (!profile.team) {
-      notes.push("上游选手详情未提供可识别的所属队伍字段。");
+      notes.push("上游选手详情暂未提供可识别的所属队伍字段，且基于近期活跃队伍的自动推断也未命中；已先返回其余可确认信息。");
     }
 
     if (!profile.country) {
