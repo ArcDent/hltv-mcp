@@ -299,16 +299,18 @@ export class HltvFacade {
   async getUpcomingMatches(
     query: UpcomingMatchesQuery
   ): Promise<ToolResponse<never, NormalizedMatch>> {
+    const normalizedTeam = query.team?.trim() || undefined;
+    const normalizedEvent = query.event?.trim() || undefined;
     const todayOnly =
       query.team_id === undefined &&
-      !query.team?.trim() &&
-      !query.event?.trim() &&
+      normalizedTeam === undefined &&
+      normalizedEvent === undefined &&
       query.limit === undefined &&
       query.days === undefined;
     const normalizedQuery = {
       team_id: query.team_id,
-      team: query.team,
-      event: query.event,
+      team: normalizedTeam,
+      event: normalizedEvent,
       limit: todayOnly ? undefined : query.limit ?? this.config.defaultResultLimit,
       days: todayOnly ? undefined : query.days ?? 7,
       timezone: query.timezone ?? this.config.defaultTimezone,
