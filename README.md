@@ -85,6 +85,7 @@ SUMMARY_MODE=template
   - 过滤时会优先匹配队伍 ID，并结合名称别名做补充匹配。
 - **`hltv_matches_upcoming` 无参数时默认返回当前时区下的今日全部比赛**：
   - 不再默认只取 `5` 条未来比赛；
+  - 在 OpenCode / slash command 场景里，无参数应直接调用 `hltv_local_hltv_matches_upcoming({})`（最多额外带 `timezone`），不要伪造 `team` / `event` / `team_id` / `limit` / `days`；
   - 输出中的队伍名与赛事名会尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 展示；
   - 赛事与队伍过滤也会一并兼容这些中英别名。
 
@@ -289,7 +290,7 @@ examples/opencode-project/
 - `/team Team Spirit`
 - `/player ZywOo`
 - `/result`
-- `/match`（无参数默认查今日全部比赛）
+- `/match`（无参数默认查今日全部比赛；实现时应直接调用空对象，不要补假参数）
 - `/news`
 
 > 模板默认写死使用 `hltv_local_` 前缀。  
