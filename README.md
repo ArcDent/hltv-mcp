@@ -20,6 +20,15 @@
 HLTV_API_BASE_URL=http://127.0.0.1:8020
 ```
 
+如果 MCP 跑在 **WSL**、而 `hltv-scraper-api` 跑在 **Windows 宿主机**：
+
+- 现在代码会在 WSL 下对 `127.0.0.1` / `localhost` / `0.0.0.0` 自动额外尝试一个从 `/etc/resolv.conf` 推断出的 Windows host 地址；
+- 如果你的环境没有成功自动探测，可以显式设置：
+
+```env
+HLTV_API_FALLBACK_BASE_URL=http://WINDOWS_HOST_IP:8020
+```
+
 ---
 
 ## 1. 当前支持情况
@@ -63,6 +72,7 @@ npm run start
 
 ```env
 HLTV_API_BASE_URL=http://127.0.0.1:8020
+HLTV_API_FALLBACK_BASE_URL=
 HLTV_API_TIMEOUT_MS=8000
 DEFAULT_TIMEZONE=Asia/Shanghai
 DEFAULT_RESULT_LIMIT=5
@@ -144,12 +154,14 @@ dist/index.js
       "type": "local",
       "command": [
         "node",
-        "C:/ABSOLUTE/PATH/TO/hltv-mcp-service/dist/index.js"
+        "/absolute/path/to/hltv-mcp-service/dist/index.js"
       ],
       "enabled": true,
       "timeout": 10000,
       "environment": {
         "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
+        // Optional for WSL when upstream runs on the Windows host:
+        // "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
         "HLTV_API_TIMEOUT_MS": "8000",
         "DEFAULT_TIMEZONE": "Asia/Shanghai",
         "DEFAULT_RESULT_LIMIT": "5",
@@ -237,9 +249,14 @@ opencode mcp add
 - 类型：`local`
 - 名称：`hltv_local`
 - command：`node`
-- args：`C:/ABSOLUTE/PATH/TO/hltv-mcp-service/dist/index.js`
+- args：`/absolute/path/to/hltv-mcp-service/dist/index.js`
 - timeout：`10000`
 - environment：与上面示例一致
+
+如果你是在 **WSL** 里跑 OpenCode / MCP：
+
+- `args` 请填写 **WSL/Linux 可访问路径**，例如 `/home/you/.../dist/index.js` 或 `/mnt/c/.../dist/index.js`；
+- 不要直接照抄 `C:/...` 这种 Windows 路径，否则本地 stdio MCP 很可能根本拉不起来。
 
 ---
 
@@ -336,6 +353,7 @@ examples/opencode-project/
   ],
   "env": {
     "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
+    "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
     "HLTV_API_TIMEOUT_MS": "8000",
     "DEFAULT_TIMEZONE": "Asia/Shanghai",
     "DEFAULT_RESULT_LIMIT": "5",
@@ -343,6 +361,12 @@ examples/opencode-project/
   }
 }
 ```
+
+WSL 场景下请注意：
+
+- 如果上游也跑在 WSL 里，`127.0.0.1` 通常没问题；
+- 如果上游跑在 Windows 宿主机里，优先依赖当前版本内置的自动回退，必要时显式设置 `HLTV_API_FALLBACK_BASE_URL`；
+- `args` 必须是 WSL 内可访问的 Linux 路径，而不是 `C:/...`。
 
 ---
 
@@ -420,6 +444,24 @@ examples/opencode-project/
 
 - MCP 注册后你得到的是 tool
 - slash command 需要你自己在 `.opencode/commands/` 或 `opencode.jsonc` 里再注册
+
+---
+
+### 7.3 WSL 下为什么 `hltv-mcp` 拉不起来，或者一直连不上上游？
+
+最常见的就是这两个原因：
+
+1. **本地 MCP 启动路径写成了 Windows 路径**
+   - 例如在 WSL 里仍然写 `C:/.../dist/index.js`
+   - 这会导致 OpenCode 无法正确拉起 `node dist/index.js`
+2. **上游 base URL 仍然指向 `127.0.0.1`，但 API 实际跑在 Windows 宿主机**
+   - 这时 WSL 里的 `127.0.0.1` 指向的是 WSL 自己，不一定是 Windows 上的服务
+   - 当前版本会自动尝试 `/etc/resolv.conf` 里的 Windows host 地址
+   - 如果仍失败，请手动设置 `HLTV_API_FALLBACK_BASE_URL`
+
+另外，当前实现对 `HLTV_API_BASE_URL` 的 path prefix 也更友好了：
+
+- 例如把上游挂在 `http://host:8020/some-prefix/` 时，请求会保留这个 prefix，而不是强制打到站点根路径
 
 ---
 

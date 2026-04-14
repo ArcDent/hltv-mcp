@@ -25,6 +25,8 @@ examples/opencode-project/
 - `examples/opencode-project/opencode.jsonc` -> `你的项目/opencode.jsonc`
 - `examples/opencode-project/.opencode/commands/*.md` -> `你的项目/.opencode/commands/`
 
+如果你是在 **WSL** 中运行 OpenCode / MCP，请把示例里的 MCP 启动路径改成 **WSL/Linux 可访问路径**，例如 `/home/you/.../dist/index.js` 或 `/mnt/c/.../dist/index.js`，不要直接照抄 `C:/...`。
+
 ## 默认前缀说明
 
 这个示例默认你的 MCP 名称叫：

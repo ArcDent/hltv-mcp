@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   const cache = new MemoryCache();
   const client = new HltvApiClient({
     baseUrl: config.hltvApiBaseUrl,
+    baseUrls: config.hltvApiBaseUrls,
     timeoutMs: config.hltvApiTimeoutMs
   });
   const teamResolver = new TeamResolver(client);

@@ -4,11 +4,19 @@ import { slugify, toEnglishMonthName } from "../utils/strings.js";
 
 export interface HltvApiClientOptions {
   baseUrl: string;
+  baseUrls?: string[];
   timeoutMs: number;
 }
 
 export class HltvApiClient {
-  constructor(private readonly options: HltvApiClientOptions) {}
+  private readonly baseUrls: string[];
+  private preferredBaseUrlIndex = 0;
+
+  constructor(private readonly options: HltvApiClientOptions) {
+    this.baseUrls = Array.from(
+      new Set([...(options.baseUrls ?? []), options.baseUrl].filter((value) => value.trim().length > 0))
+    );
+  }
 
   async searchTeams(name: string): Promise<unknown[]> {
     try {
@@ -91,7 +99,85 @@ export class HltvApiClient {
   }
 
   private async requestJson(path: string): Promise<unknown> {
-    const url = new URL(path, this.options.baseUrl);
+    const attemptedBaseUrls: string[] = [];
+    let lastError: AppError | undefined;
+
+    for (const baseUrl of this.getAttemptOrder()) {
+      attemptedBaseUrls.push(baseUrl);
+
+      try {
+        const payload = await this.requestJsonFromBaseUrl(baseUrl, path);
+        this.preferredBaseUrlIndex = this.baseUrls.indexOf(baseUrl);
+        return payload;
+      } catch (error) {
+        if (error instanceof AppError) {
+          if (error.code === "UPSTREAM_NOT_FOUND") {
+            throw error;
+          }
+
+          lastError = error;
+
+          if (error.retryable && attemptedBaseUrls.length < this.baseUrls.length) {
+            continue;
+          }
+
+          throw this.withAttemptMetadata(error, attemptedBaseUrls);
+        }
+
+        lastError = new AppError("UPSTREAM_UNAVAILABLE", "Failed to reach HLTV API", {
+          retryable: true,
+          details: { path, baseUrl },
+          cause: error
+        });
+
+        if (attemptedBaseUrls.length < this.baseUrls.length) {
+          continue;
+        }
+
+        throw this.withAttemptMetadata(lastError, attemptedBaseUrls);
+      }
+    }
+
+    throw this.withAttemptMetadata(
+      lastError ??
+        new AppError("UPSTREAM_UNAVAILABLE", "Failed to reach HLTV API", {
+          retryable: true,
+          details: { path }
+        }),
+      attemptedBaseUrls
+    );
+  }
+
+  private getAttemptOrder(): string[] {
+    if (this.baseUrls.length <= 1) {
+      return this.baseUrls;
+    }
+
+    return [
+      this.baseUrls[this.preferredBaseUrlIndex]!,
+      ...this.baseUrls.filter((_, index) => index !== this.preferredBaseUrlIndex)
+    ];
+  }
+
+  private resolveRequestUrl(baseUrl: string, path: string): URL {
+    const parsedBaseUrl = new URL(baseUrl);
+    const basePath = parsedBaseUrl.pathname.endsWith("/") ? parsedBaseUrl.pathname : `${parsedBaseUrl.pathname}/`;
+    return new URL(path.replace(/^\/+/, ""), new URL(basePath, parsedBaseUrl));
+  }
+
+  private withAttemptMetadata(error: AppError, attemptedBaseUrls: string[]): AppError {
+    return new AppError(error.code, error.message, {
+      retryable: error.retryable,
+      details: {
+        ...error.details,
+        attemptedBaseUrls
+      },
+      cause: error.cause
+    });
+  }
+
+  private async requestJsonFromBaseUrl(baseUrl: string, path: string): Promise<unknown> {
+    const url = this.resolveRequestUrl(baseUrl, path);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs);
 
@@ -110,7 +196,9 @@ export class HltvApiClient {
             retryable: false,
             details: {
               path,
-              status: response.status
+              status: response.status,
+              url: url.toString(),
+              baseUrl
             }
           });
         }
@@ -119,7 +207,9 @@ export class HltvApiClient {
           retryable: response.status >= 500,
           details: {
             path,
-            status: response.status
+            status: response.status,
+            url: url.toString(),
+            baseUrl
           }
         });
       }
@@ -133,13 +223,21 @@ export class HltvApiClient {
       if (error instanceof Error && error.name === "AbortError") {
         throw new AppError("UPSTREAM_TIMEOUT", "HLTV API request timed out", {
           retryable: true,
-          details: { path }
+          details: {
+            path,
+            url: url.toString(),
+            baseUrl
+          }
         });
       }
 
       throw new AppError("UPSTREAM_UNAVAILABLE", "Failed to reach HLTV API", {
         retryable: true,
-        details: { path },
+        details: {
+          path,
+          url: url.toString(),
+          baseUrl
+        },
         cause: error
       });
     } finally {

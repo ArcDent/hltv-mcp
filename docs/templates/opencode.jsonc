@@ -6,12 +6,14 @@
       "type": "local",
       "command": [
         "node",
-        "C:/ABSOLUTE/PATH/TO/hltv-mcp-service/dist/index.js"
+        "/absolute/path/to/hltv-mcp-service/dist/index.js"
       ],
       "enabled": true,
       "timeout": 10000,
       "environment": {
         "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
+        // Optional for WSL when the upstream API runs on the Windows host:
+        // "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
         "HLTV_API_TIMEOUT_MS": "8000",
         "DEFAULT_TIMEZONE": "Asia/Shanghai",
         "DEFAULT_RESULT_LIMIT": "5",

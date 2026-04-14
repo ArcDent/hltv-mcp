@@ -14,6 +14,7 @@ function createConfig(): AppConfig {
     mcpServerName: "hltv-mcp-service",
     mcpServerVersion: "0.2.0",
     hltvApiBaseUrl: "http://127.0.0.1:8020",
+    hltvApiBaseUrls: ["http://127.0.0.1:8020"],
     hltvApiTimeoutMs: 1_000,
     defaultTimezone: "Asia/Shanghai",
     defaultResultLimit: 5,
