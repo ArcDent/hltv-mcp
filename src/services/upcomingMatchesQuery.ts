@@ -80,6 +80,10 @@ export function isPlaceholderUpcomingFilterText(value: string | undefined): bool
   return PLACEHOLDER_UPCOMING_FILTER_VALUES.has(normalized) || /^[a-z]$/.test(normalized);
 }
 
+function isSuspiciousAutofilledUpcomingFilterText(value: string | undefined): boolean {
+  return isPlaceholderUpcomingFilterText(value) || isGenericMatchFilterText(value);
+}
+
 export function isLikelyAutofilledUpcomingQuery(query: UpcomingMatchesQuery): boolean {
   const hasExplicitPlaceholderFields =
     Object.prototype.hasOwnProperty.call(query, "team") && Object.prototype.hasOwnProperty.call(query, "event");
@@ -94,5 +98,8 @@ export function isLikelyAutofilledUpcomingQuery(query: UpcomingMatchesQuery): bo
     return false;
   }
 
-  return isPlaceholderUpcomingFilterText(query.team) && isPlaceholderUpcomingFilterText(query.event);
+  return (
+    isSuspiciousAutofilledUpcomingFilterText(query.team) &&
+    isSuspiciousAutofilledUpcomingFilterText(query.event)
+  );
 }
