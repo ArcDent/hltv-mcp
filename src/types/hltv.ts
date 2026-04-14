@@ -44,6 +44,17 @@ export interface UpcomingMatchesQuery {
   timezone?: string;
 }
 
+export interface MatchCommandParseQuery {
+  raw_args?: string;
+  timezone?: string;
+}
+
+export interface MatchCommandParseResult {
+  raw_args?: string;
+  payload: UpcomingMatchesQuery;
+  dropped_fields: string[];
+}
+
 export interface NewsDigestQuery {
   limit?: number;
   tag?: string;

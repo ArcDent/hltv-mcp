@@ -37,12 +37,13 @@ hltv_local
 
 - `hltv_local_resolve_team`
 - `hltv_local_resolve_player`
+- `hltv_local_match_command_parse`
 - `hltv_local_hltv_team_recent`
 - `hltv_local_hltv_player_recent`
 - `hltv_local_hltv_results_recent`
 - `hltv_local_hltv_matches_upcoming`
 - `hltv_local_hltv_news_digest`
 
-补充：示例里的 `/match` 模板默认是“无参数查询今日全部比赛”，实现时应直接调用 `hltv_local_hltv_matches_upcoming({})`（最多额外带 `timezone`），不要伪造 `team`、`event`、`team_id`、`limit`、`days`，并尽量输出队伍名/赛事名的中英对照格式。
+补充：示例里的 `/match` 模板会先调用 `hltv_local_match_command_parse` 清洗原始参数，再查询“无参数时的今日全部比赛”或带过滤条件的赛程，并尽量输出队伍名/赛事名的中英对照格式。
 
 如果你自己的 MCP 名称不是 `hltv_local`，请把这些前缀一起替换掉。

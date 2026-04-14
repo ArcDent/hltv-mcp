@@ -37,6 +37,64 @@ export const resultsSchema = {
   timezone: z.string().min(1).optional()
 };
 
+export const matchesSchema = {
+  team_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Optional stable HLTV team id. Prefer only after resolve_team returns a confirmed id."),
+  team: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional explicit team name filter. Omit this for generic requests like today's matches / 今日赛程. Do not pass placeholders or generic words such as today, 今日, schedule, matches, 比赛, 赛程."
+    ),
+  event: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional explicit event name filter. Omit this for generic requests like today's matches / 今日赛程. Do not pass generic date or schedule words as event names."
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe(
+      "Optional result limit. Omit limit for the no-argument default behavior that returns today's matches in the active timezone."
+    ),
+  days: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .optional()
+    .describe(
+      "Optional upcoming window in days. Omit days for the no-argument default behavior that returns today's matches in the active timezone."
+    ),
+  timezone: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional IANA timezone. For no-argument default mode, this may be the only extra field you pass.")
+};
+
+export const matchCommandParseSchema = {
+  raw_args: z
+    .string()
+    .optional()
+    .describe("The exact raw argument string received by the /match command. Leave empty for '/match' with no args."),
+  timezone: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional fallback timezone to keep when parsing raw args. Do not invent other fields.")
+};
+
 export const newsSchema = {
   limit: z.number().int().min(1).max(20).optional(),
   tag: z.string().min(1).optional(),

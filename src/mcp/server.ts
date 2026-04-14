@@ -2,8 +2,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { AppConfig } from "../config/env.js";
 import { HltvFacade } from "../services/hltvFacade.js";
+import { parseMatchCommandArgs } from "../services/matchCommandParser.js";
 import { ChineseRenderer } from "../renderers/chineseRenderer.js";
 import {
+  matchCommandParseSchema,
+  matchesSchema,
   newsSchema,
   playerRecentSchema,
   resolveEntitySchema,
@@ -88,9 +91,19 @@ export function createMcpServer(
   );
 
   server.tool(
+    "match_command_parse",
+    "Parse raw /match arguments into a safe payload. Drops invalid, generic, placeholder, or hallucinated fields so slash commands can call hltv_matches_upcoming safely.",
+    matchCommandParseSchema,
+    async (input) => {
+      const parsed = parseMatchCommandArgs(input);
+      return toolResult(JSON.stringify(parsed, null, 2), parsed);
+    }
+  );
+
+  server.tool(
     "hltv_matches_upcoming",
-    "Get upcoming HLTV matches with optional team or event filters.",
-    resultsSchema,
+    "Get upcoming HLTV matches. With no explicit filters, return today's matches in the active timezone. For generic requests like '/match', 'today matches', '今日赛程', or '今天有什么比赛', omit team/event/limit/days and call with {} (or only timezone).",
+    matchesSchema,
     async (input) => {
       const response = await facade.getUpcomingMatches(input);
       return toolResult(renderer.renderMatches(response), response, Boolean(response.error));

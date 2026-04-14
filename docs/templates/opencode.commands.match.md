@@ -9,25 +9,37 @@ agent: build
 
 执行规则：
 
-1. 调用 `hltv_local_hltv_matches_upcoming`。
-2. 如果 `$ARGUMENTS` 为空、只有空白字符，或语义上等于“没有参数”，必须直接调用 `hltv_local_hltv_matches_upcoming({})`。
-   - 如需显式指定时区，最多只额外传 `timezone`。
-   - 不要为了“补全参数”而伪造 `team`、`event`、`team_id`。
-   - 不要传占位值，例如 `all`、`*`、`""`、`" "`、`null` 的字符串形式等。
-   - 这种无参数场景下不要传 `limit`，也不要传 `days`。
-3. 如果 `$ARGUMENTS` 中包含队伍或赛事过滤条件，只传你能从用户输入里明确提取出来的字段：
-   - 队伍 -> `team`
-   - 赛事 -> `event`
-   - 只有在你已经先调用过解析工具并拿到真实实体 ID 时，才允许传 `team_id`。
-4. 不允许脑补、猜测或伪造任何过滤条件；拿不准就少传，不要乱传。
-5. 输出时保留：
+1. 先把“本次 `/match` 命令在当前消息里实际收到的原始参数字符串”记为 `rawArgs`。**所有 tool 参数都只能来自 `rawArgs` 本身**。
+   - **不要**参考历史对话
+   - **不要**参考之前提到过的队伍/赛事
+   - **不要**参考之前的 tool 调用结果
+   - **不要**参考示例文字、默认想象值、占位值或 tool schema 里可能出现的默认形式
+2. **先调用** `hltv_local_match_command_parse`，传入：
+   - `raw_args`: `rawArgs`
+3. 再调用 `hltv_local_hltv_matches_upcoming`。
+4. 只允许把 `hltv_local_match_command_parse` 返回结果中的 `payload` 原样传给 `hltv_local_hltv_matches_upcoming`：
+   - **不要**自行再补 `team` / `event` / `team_id`
+   - **不要**绕过解析工具自己拼 payload
+   - 如果解析结果 `payload` 为 `{}`，就必须调用 `hltv_local_hltv_matches_upcoming({})`
+5. 对解析结果做最后自检：
+   - 若 `trim(rawArgs)` 为空，解析结果 `payload` 必须是 `{}`
+   - 若解析结果里有 `dropped_fields`，说明一些无效/泛化/幻觉参数已被丢弃，不要把它们补回去
+   - 最终传给 `hltv_local_hltv_matches_upcoming` 的对象必须严格等于 parser 返回的 `payload`
+6. 输出时保留：
    - 对阵双方（尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 格式展示队伍名）
    - 预计开赛时间
    - 赛事（尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 格式展示赛事名）
    - 更新时间
    - 来源
-6. 如果没有数据，明确说明是“暂无匹配赛程”。
-7. 如果工具返回错误，原样说明错误码和事实上游信息，不要脑补。
+7. 如果没有数据，明确说明是“暂无匹配赛程”。
+8. 如果 parser 返回的 `dropped_fields` 非空，可在最终回复里补一句“已忽略无效过滤参数：...”。
+9. 如果工具返回错误，原样说明错误码和事实上游信息，不要脑补。
+
+关键示例：
+
+- `/match` -> 先 `hltv_local_match_command_parse({ raw_args: "" })`，再 `hltv_local_hltv_matches_upcoming({})`
+- `/match    ` -> 先 `hltv_local_match_command_parse({ raw_args: "    " })`，再 `hltv_local_hltv_matches_upcoming({})`
+- 即使上文刚讨论过某支队伍、某个赛事或上一条 tool 调用，也**仍然只能**按当前 `rawArgs` 决定；空参数时依然必须调用 `{}`
 
 用户输入：
 $ARGUMENTS

@@ -35,6 +35,10 @@ import {
   normalizeUpcomingMatches,
   splitTeamMatches
 } from "./hltvNormalizer.js";
+import {
+  isLikelyAutofilledUpcomingQuery,
+  normalizeUpcomingFilterText
+} from "./upcomingMatchesQuery.js";
 
 interface TeamInferenceCandidate {
   id?: number;
@@ -299,21 +303,22 @@ export class HltvFacade {
   async getUpcomingMatches(
     query: UpcomingMatchesQuery
   ): Promise<ToolResponse<never, NormalizedMatch>> {
-    const normalizedTeam = query.team?.trim() || undefined;
-    const normalizedEvent = query.event?.trim() || undefined;
+    const effectiveQuery = isLikelyAutofilledUpcomingQuery(query) ? {} : query;
+    const normalizedTeam = normalizeUpcomingFilterText(effectiveQuery.team);
+    const normalizedEvent = normalizeUpcomingFilterText(effectiveQuery.event);
     const todayOnly =
-      query.team_id === undefined &&
-      normalizedTeam === undefined &&
-      normalizedEvent === undefined &&
-      query.limit === undefined &&
-      query.days === undefined;
+      effectiveQuery.team_id === undefined &&
+      !normalizedTeam &&
+      !normalizedEvent &&
+      effectiveQuery.limit === undefined &&
+      effectiveQuery.days === undefined;
     const normalizedQuery = {
-      team_id: query.team_id,
+      team_id: effectiveQuery.team_id,
       team: normalizedTeam,
       event: normalizedEvent,
-      limit: todayOnly ? undefined : query.limit ?? this.config.defaultResultLimit,
-      days: todayOnly ? undefined : query.days ?? 7,
-      timezone: query.timezone ?? this.config.defaultTimezone,
+      limit: todayOnly ? undefined : effectiveQuery.limit ?? this.config.defaultResultLimit,
+      days: todayOnly ? undefined : effectiveQuery.days ?? 7,
+      timezone: effectiveQuery.timezone ?? this.config.defaultTimezone,
       today_only: todayOnly
     };
     const cacheKey = `matches_upcoming:${JSON.stringify(normalizedQuery)}`;
