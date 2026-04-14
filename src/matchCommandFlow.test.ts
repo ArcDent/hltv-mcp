@@ -7,6 +7,7 @@ import type { AppConfig } from "./config/env.js";
 import type { ToolResponse } from "./types/common.js";
 import type { NormalizedMatch } from "./types/hltv.js";
 import { parseMatchCommandArgs } from "./services/matchCommandParser.js";
+import { isLikelyAutofilledUpcomingQuery } from "./services/upcomingMatchesQuery.js";
 
 function createConfig(): AppConfig {
   return {
@@ -59,6 +60,30 @@ test("blank parser input stays empty and explicit filters survive parsing", () =
     },
     dropped_fields: []
   });
+});
+
+test("generic fabricated today payloads are treated as suspicious autofill", () => {
+  assert.equal(
+    isLikelyAutofilledUpcomingQuery({
+      team: "today matches",
+      event: "today",
+      limit: 1,
+      days: 1,
+      timezone: "UTC"
+    }),
+    true
+  );
+
+  assert.equal(
+    isLikelyAutofilledUpcomingQuery({
+      team: "Spirit",
+      event: "IEM Rio",
+      limit: 1,
+      days: 1,
+      timezone: "UTC"
+    }),
+    false
+  );
 });
 
 test("bare command handler routes to today matches", async () => {
