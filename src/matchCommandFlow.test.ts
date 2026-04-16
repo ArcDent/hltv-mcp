@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { CommandHandlers } from "./commands/commandHandlers.js";
+import { COMMAND_REGISTRY, CommandHandlers } from "./commands/commandHandlers.js";
 import { HltvFacade } from "./services/hltvFacade.js";
 import { createMcpServer } from "./mcp/server.js";
 import type { AppConfig } from "./config/env.js";
@@ -43,6 +44,18 @@ function createMatchResponse(query: Record<string, unknown>): ToolResponse<never
     },
     error: null
   };
+}
+
+function readProjectText(pathFromProjectRoot: string): string {
+  return readFileSync(new URL(`../${pathFromProjectRoot}`, import.meta.url), "utf8");
+}
+
+function assertTodayOnlyMatchTemplate(content: string): void {
+  assert.match(content, /hltv_local_hltv_matches_today\(\{\}\)/);
+  assert.doesNotMatch(content, /hltv_local_match_command_parse/);
+  assert.doesNotMatch(content, /hltv_local_hltv_matches_upcoming/);
+  assert.doesNotMatch(content, /\/match\s+Spirit/);
+  assert.doesNotMatch(content, /\/match\s+IEM\s+Melbourne/);
 }
 
 test("blank parser input stays empty and explicit filters survive parsing", () => {
@@ -114,9 +127,14 @@ test("bare command handler routes to today matches", async () => {
   assert.equal(rendered, JSON.stringify({ timezone: "Asia/Shanghai", today_only: true }));
 });
 
-test("explicit command handler filters still route to upcoming matches", async () => {
-  let capturedQuery: Record<string, unknown> | undefined;
+test("match registry advertises today-only usage", () => {
+  assert.match(COMMAND_REGISTRY.match.description, /今日赛程|仅支持无参数/);
+  assert.equal(COMMAND_REGISTRY.match.usage, "/Match");
+});
+
+test("match command ignores arguments and still routes to today matches", async () => {
   let getTodayMatchesCalls = 0;
+  let getUpcomingMatchesCalls = 0;
 
   const handlers = new CommandHandlers(
     {
@@ -124,9 +142,9 @@ test("explicit command handler filters still route to upcoming matches", async (
         getTodayMatchesCalls += 1;
         return createMatchResponse({ timezone: "Asia/Shanghai", today_only: true });
       },
-      getUpcomingMatches: async (query: Record<string, unknown>) => {
-        capturedQuery = query;
-        return createMatchResponse({ ...query, timezone: "Asia/Shanghai", today_only: false });
+      getUpcomingMatches: async () => {
+        getUpcomingMatchesCalls += 1;
+        return createMatchResponse({ timezone: "Asia/Shanghai", today_only: false });
       }
     } as unknown as HltvFacade,
     {
@@ -136,22 +154,17 @@ test("explicit command handler filters still route to upcoming matches", async (
 
   const rendered = await handlers.match("Spirit", "IEM Melbourne", 3);
 
-  assert.equal(getTodayMatchesCalls, 0);
-  assert.deepEqual(capturedQuery, {
-    team: "Spirit",
-    event: "IEM Melbourne",
-    limit: 3
-  });
-  assert.equal(
-    rendered,
-    JSON.stringify({
-      team: "Spirit",
-      event: "IEM Melbourne",
-      limit: 3,
-      timezone: "Asia/Shanghai",
-      today_only: false
-    })
-  );
+  assert.equal(getTodayMatchesCalls, 1);
+  assert.equal(getUpcomingMatchesCalls, 0);
+  assert.equal(rendered, JSON.stringify({ timezone: "Asia/Shanghai", today_only: true }));
+});
+
+test("docs match template is today-only", () => {
+  assertTodayOnlyMatchTemplate(readProjectText("docs/templates/opencode.commands.match.md"));
+});
+
+test("example match template is today-only", () => {
+  assertTodayOnlyMatchTemplate(readProjectText("examples/opencode-project/.opencode/commands/match.md"));
 });
 
 test("today facade helper delegates with an empty upcoming query", async () => {

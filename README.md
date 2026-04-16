@@ -99,13 +99,10 @@ SUMMARY_MODE=template
   - 不再默认只取 `5` 条未来比赛；
   - 输出中的队伍名与赛事名会尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 展示；
   - 赛事与队伍过滤也会一并兼容这些中英别名。
-- **推荐把 bare `/match` 固定到 `hltv_matches_today`**：
-  - 当 slash command 没有参数时，直接调用 `hltv_matches_today`；
-  - 这样可以把“今日全部比赛”的默认参数写死在 tool 内，避免 LLM 幻觉补 `team/event/limit/days`。
-- **只有带显式过滤文本的 `/match ...` 再走 `match_command_parse`**：
-  - 先把 slash command 收到的非空 `raw_args` 原样传给 `match_command_parse`；
-  - 再把 parser 返回的 `payload` 原样传给 `hltv_matches_upcoming`；
-  - 这样可以尽量避免把 `today`、`赛程`、占位值、或幻觉参数误传成 `team/event` 导致空结果或错误过滤。
+- **`/match` 路由约定**：
+  - **`/match`（无参数）**：直接调用 `hltv_local_hltv_matches_today({})`，不要调用 parser。
+  - **`/match`（带参数）**：不要调用任何 tool，直接提示“`/match` 现在只支持无参数，只用于查询今日赛程；请删除参数后重试”。
+  - 如果还要按队伍 / 赛事筛未来比赛，请直接调用 `hltv_local_hltv_matches_upcoming`，不要再通过 `/match` 间接路由。
 
 ---
 
@@ -317,7 +314,7 @@ examples/opencode-project/
 - `/team Team Spirit`
 - `/player ZywOo`
 - `/result`
-- `/match`（无参数时直接走 `hltv_matches_today`，默认查今日全部比赛）
+- `/match`（只支持无参数，用于查询今日赛程）
 - `/news`
 
 > 模板默认写死使用 `hltv_local_` 前缀。  

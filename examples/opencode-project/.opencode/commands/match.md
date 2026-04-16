@@ -1,8 +1,8 @@
 ---
-description: 查询 HLTV 未来比赛
+description: 查询 HLTV 今日赛程
 agent: build
 ---
-使用 HLTV MCP 查询未来比赛。
+使用 HLTV MCP 查询今日赛程。
 
 默认假设当前 OpenCode 中的 MCP 名称是 `hltv_local`，所以工具名前缀是 `hltv_local_`。
 如果你的 MCP 名称不是 `hltv_local`，请先把下面工具名替换成你的真实前缀再执行。
@@ -14,37 +14,26 @@ agent: build
    - **不要**参考之前提到过的队伍/赛事
    - **不要**参考之前的 tool 调用结果
    - **不要**参考示例文字、默认想象值、占位值或 tool schema 里可能出现的默认形式
-2. 如果 `trim(rawArgs)` 为空，**直接调用** `hltv_local_hltv_matches_today({})`。
-   - **不要**先调用 `hltv_local_match_command_parse`
-   - **不要**改成 `hltv_local_hltv_matches_upcoming(...)`
+2. 如果 `trim(rawArgs)` **非空**，**不要调用任何 tool**，直接回复：`/match 现在只支持无参数，只用于查询今日赛程；请删除参数后重试。`
+3. 如果 `trim(rawArgs)` 为空，**直接调用** `hltv_local_hltv_matches_today({})`。
+   - **不要**先调用任何 parser
+   - **不要**改成其它赛程查询工具
    - **不要**自行补任何 `team` / `event` / `limit` / `days`
-3. 只有在 `trim(rawArgs)` **非空**时，才调用 `hltv_local_match_command_parse`，传入：
-   - `raw_args`: `rawArgs`
-4. 当且仅当你已经调用了 parser，才继续调用 `hltv_local_hltv_matches_upcoming`。
-5. 只允许把 `hltv_local_match_command_parse` 返回结果中的 `payload` 原样传给 `hltv_local_hltv_matches_upcoming`：
-   - **不要**自行再补 `team` / `event` / `team_id`
-   - **不要**绕过解析工具自己拼 payload
-   - 如果解析结果 `payload` 为 `{}`，就必须调用 `hltv_local_hltv_matches_upcoming({})`
-6. 对解析结果做最后自检：
-   - 若 `trim(rawArgs)` 为空，你实际调用的必须是 `hltv_local_hltv_matches_today({})`
-   - 若解析结果里有 `dropped_fields`，说明一些无效/泛化/幻觉参数已被丢弃，不要把它们补回去
-   - 若你调用了 `hltv_local_hltv_matches_upcoming`，最终传入对象必须严格等于 parser 返回的 `payload`
-7. 输出时保留：
+4. 输出时保留：
    - 对阵双方（尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 格式展示队伍名）
    - 预计开赛时间
    - 赛事（尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 格式展示赛事名）
    - 更新时间
    - 来源
-8. 如果没有数据，明确说明是“暂无匹配赛程”。
-9. 如果 parser 返回的 `dropped_fields` 非空，可在最终回复里补一句“已忽略无效过滤参数：...”。
-10. 如果工具返回错误，原样说明错误码和事实上游信息，不要脑补。
+5. 如果没有数据，明确说明是“暂无匹配赛程”。
+6. 如果工具返回错误，原样说明错误码和事实上游信息，不要脑补。
 
 关键示例：
 
 - `/match` -> 直接 `hltv_local_hltv_matches_today({})`
 - `/match    ` -> 直接 `hltv_local_hltv_matches_today({})`
-- `/match Spirit` -> 先 `hltv_local_match_command_parse({ raw_args: "Spirit" })`，再把 parser 的 `payload` 原样传给 `hltv_local_hltv_matches_upcoming(...)`
-- 即使上文刚讨论过某支队伍、某个赛事或上一条 tool 调用，也**仍然只能**按当前 `rawArgs` 决定；空参数时必须调用 `hltv_local_hltv_matches_today({})`
+- 只要参数非空 -> 直接拒绝，并提示用户删除参数后重试
+- 即使上文刚讨论过某支队伍、某个赛事或上一条 tool 调用，也**仍然只能**按当前 `rawArgs` 决定；只要有参数就直接拒绝
 
 用户输入：
 $ARGUMENTS
