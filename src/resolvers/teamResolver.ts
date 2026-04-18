@@ -2,20 +2,8 @@ import type { ResolvedTeamEntity } from "../types/hltv.js";
 import type { HltvApiClient } from "../clients/hltvApiClient.js";
 import { asRecord, pickNumber, pickString } from "../utils/object.js";
 import { parseHltvEntityLink } from "../utils/strings.js";
-import { buildQueryVariants, EntityDirectory, normalizeLookupName, uniqueStrings } from "./entityIdentity.js";
-
-const TEAM_ALIAS_DICTIONARY: Record<string, string[]> = {
-  navi: ["Natus Vincere", "NaVi"],
-  "natus vincere": ["NaVi", "Natus Vincere", "NAVI"],
-  vp: ["Virtus.pro"],
-  "virtus pro": ["Virtus.pro", "VP"],
-  spirit: ["Team Spirit", "Spirit"],
-  "team spirit": ["Team Spirit", "Spirit"],
-  faze: ["FaZe", "FaZe Clan"],
-  "faze clan": ["FaZe", "FaZe Clan"],
-  g2: ["G2", "G2 Esports"],
-  mouz: ["MOUZ"]
-};
+import { buildCatalogTeamQueryVariants, expandCatalogTeamAliases } from "../utils/teamAliasCatalog.js";
+import { EntityDirectory, normalizeLookupName, uniqueStrings } from "./entityIdentity.js";
 
 export class TeamResolver {
   private readonly directory = new EntityDirectory<ResolvedTeamEntity>();
@@ -31,7 +19,7 @@ export class TeamResolver {
   }
 
   async resolve(name: string, exact = false, limit = 5): Promise<ResolvedTeamEntity[]> {
-    const queries = buildQueryVariants(name, TEAM_ALIAS_DICTIONARY);
+    const queries = buildCatalogTeamQueryVariants(name);
     const results = new Map<number, ResolvedTeamEntity>();
 
     for (const cached of this.directory.findByAlias(name)) {
@@ -44,9 +32,9 @@ export class TeamResolver {
     for (const query of queries) {
       const items = await this.client.searchTeams(query);
       for (const item of items) {
-        const normalized = this.normalizeTeam(item, name, [query]);
+        const normalized = this.normalizeTeam(item, name);
         if (normalized) {
-          const remembered = this.remember(normalized, [name, query]);
+          const remembered = this.remember(normalized, this.buildMatchedAliases(normalized, name, query));
           results.set(remembered.id, {
             ...remembered,
             score: this.scoreMatch(remembered, name)
@@ -59,7 +47,7 @@ export class TeamResolver {
     return exact ? sorted.filter((item) => this.isExactMatch(item, name)).slice(0, limit) : sorted.slice(0, limit);
   }
 
-  private normalizeTeam(raw: unknown, originalQuery: string, extraAliases: string[] = []): ResolvedTeamEntity | undefined {
+  private normalizeTeam(raw: unknown, originalQuery: string): ResolvedTeamEntity | undefined {
     const record = asRecord(raw);
     if (!record) {
       return undefined;
@@ -75,7 +63,6 @@ export class TeamResolver {
 
     const country = pickString(record, ["country", "country_code", "countryCode"]);
     const rank = pickNumber(record, ["rank", "world_rank", "worldRank"]);
-    const dictionaryAliases = this.lookupAliases(originalQuery);
 
     const entity: ResolvedTeamEntity = {
       type: "team",
@@ -84,7 +71,7 @@ export class TeamResolver {
       slug: parsedLink.slug ?? this.client.buildSlug(name, id),
       country,
       rank,
-      aliases: uniqueStrings([name, parsedLink.slug, ...dictionaryAliases, ...extraAliases])
+      aliases: uniqueStrings([name, parsedLink.slug])
     };
 
     return {
@@ -94,12 +81,20 @@ export class TeamResolver {
   }
 
   private lookupAliases(query: string): string[] {
-    const normalized = normalizeLookupName(query);
-    return uniqueStrings([
-      ...(TEAM_ALIAS_DICTIONARY[normalized.strict] ?? []),
-      ...(TEAM_ALIAS_DICTIONARY[normalized.loose] ?? []),
-      ...(TEAM_ALIAS_DICTIONARY[normalized.slug] ?? [])
-    ]);
+    return expandCatalogTeamAliases(query);
+  }
+
+  private buildMatchedAliases(entity: ResolvedTeamEntity, originalQuery: string, query: string): string[] {
+    const aliases = uniqueStrings([originalQuery, query, ...this.lookupAliases(originalQuery)]);
+    return aliases.some((alias) => this.matchesEntityIdentity(entity, alias)) ? aliases : [];
+  }
+
+  private matchesEntityIdentity(entity: ResolvedTeamEntity, query: string): boolean {
+    const target = normalizeLookupName(query);
+    return uniqueStrings([entity.name, entity.slug]).some((value) => {
+      const candidate = normalizeLookupName(value);
+      return candidate.strict === target.strict || candidate.loose === target.loose || candidate.slug === target.slug;
+    });
   }
 
   private isExactMatch(entity: ResolvedTeamEntity, query: string): boolean {
