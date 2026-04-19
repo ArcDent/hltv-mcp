@@ -13,7 +13,6 @@ export interface TeamRecentQuery {
   include_upcoming?: boolean;
   include_recent_results?: boolean;
   detail?: DetailLevel;
-  timezone?: string;
   exact?: boolean;
 }
 
@@ -22,7 +21,6 @@ export interface PlayerRecentQuery {
   player_name?: string;
   limit?: number;
   detail?: DetailLevel;
-  timezone?: string;
   exact?: boolean;
 }
 
@@ -32,7 +30,6 @@ export interface ResultsRecentQuery {
   event?: string;
   limit?: number;
   days?: number;
-  timezone?: string;
 }
 
 export interface UpcomingMatchesQuery {
@@ -41,12 +38,10 @@ export interface UpcomingMatchesQuery {
   event?: string;
   limit?: number;
   days?: number;
-  timezone?: string;
 }
 
 export interface MatchCommandParseQuery {
   raw_args?: string;
-  timezone?: string;
 }
 
 export interface MatchCommandParseResult {
@@ -60,7 +55,6 @@ export interface NewsDigestQuery {
   tag?: string;
   year?: number;
   month?: number | string;
-  timezone?: string;
 }
 
 export interface ResolvedTeamEntity {

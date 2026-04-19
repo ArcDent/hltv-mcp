@@ -9,7 +9,6 @@ export interface AppConfig {
   hltvApiBaseUrl: string;
   hltvApiBaseUrls: string[];
   hltvApiTimeoutMs: number;
-  defaultTimezone: string;
   defaultResultLimit: number;
   summaryMode: SummaryMode;
   entityCacheTtlSec: number;
@@ -138,11 +137,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   return {
     mcpServerName: readString(env.MCP_SERVER_NAME, "hltv-mcp-service"),
-    mcpServerVersion: readString(env.MCP_SERVER_VERSION, "0.2.0"),
+    mcpServerVersion: readString(env.MCP_SERVER_VERSION, "0.3.0"),
     hltvApiBaseUrl: hltvApiBaseUrls[0] ?? normalizeBaseUrl("http://127.0.0.1:8020"),
     hltvApiBaseUrls,
     hltvApiTimeoutMs: readNumber(env.HLTV_API_TIMEOUT_MS, 8_000),
-    defaultTimezone: readString(env.DEFAULT_TIMEZONE, "Asia/Shanghai"),
     defaultResultLimit: readNumber(env.DEFAULT_RESULT_LIMIT, 5),
     summaryMode: readSummaryMode(env.SUMMARY_MODE),
     entityCacheTtlSec: readNumber(env.ENTITY_CACHE_TTL_SEC, 3_600),

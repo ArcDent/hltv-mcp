@@ -15,7 +15,6 @@
         // Optional for WSL when the upstream API runs on the Windows host:
         // "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
         "HLTV_API_TIMEOUT_MS": "8000",
-        "DEFAULT_TIMEZONE": "Asia/Shanghai",
         "DEFAULT_RESULT_LIMIT": "5",
         "SUMMARY_MODE": "template"
       }

@@ -21,7 +21,6 @@ export class ChineseRenderer {
 
     const summary = this.summaryService.summarizeTeam(response);
     const { profile, recent_results, upcoming_matches, summary_stats } = response.data;
-    const timezone = response.query.timezone as string;
 
     const recentLines = recent_results.length
       ? recent_results
@@ -36,7 +35,7 @@ export class ChineseRenderer {
       ? upcoming_matches
           .map(
             (item) =>
-              `- vs ${formatTeamDisplayName(item.opponent ?? item.team2 ?? item.team1) ?? "未知对手"} ${item.scheduled_at ? formatDateTime(item.scheduled_at, timezone) : "待定"}${item.event ? `（${formatEventDisplayName(item.event) ?? item.event}）` : ""}`
+              `- vs ${formatTeamDisplayName(item.opponent ?? item.team2 ?? item.team1) ?? "未知对手"} ${item.scheduled_at ? formatDateTime(item.scheduled_at) : "待定"}${item.event ? `（${formatEventDisplayName(item.event) ?? item.event}）` : ""}`
           )
           .join("\n")
       : "- 暂无近期赛程";
@@ -54,7 +53,7 @@ export class ChineseRenderer {
       summary,
       "",
       ...this.renderReasonSection(response),
-      `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
   }
@@ -66,7 +65,6 @@ export class ChineseRenderer {
 
     const summary = this.summaryService.summarizePlayer(response);
     const { profile, overview, recent_highlights } = response.data;
-    const timezone = response.query.timezone as string;
     const statsLines = Object.entries(overview).length
       ? Object.entries(overview)
           .map(([key, value]) => `- ${key}: ${value}`)
@@ -89,7 +87,7 @@ export class ChineseRenderer {
       summary,
       "",
       ...this.renderReasonSection(response),
-      `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
   }
@@ -110,12 +108,11 @@ export class ChineseRenderer {
     }
 
     const summary = this.summaryService.summarizeNews(response);
-    const timezone = (response.query.timezone as string) || "Asia/Shanghai";
     const lines = response.items?.length
       ? response.items
           .map(
             (item, index) =>
-              `${index + 1}. ${item.title}${item.published_at ? ` — ${formatDateTime(item.published_at, timezone)}` : ""}`
+              `${index + 1}. ${item.title}${item.published_at ? ` — ${formatDateTime(item.published_at)}` : ""}`
           )
           .join("\n")
       : "暂无新闻数据";
@@ -129,7 +126,7 @@ export class ChineseRenderer {
       summary,
       "",
       ...this.renderReasonSection(response),
-      `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
   }
@@ -150,7 +147,7 @@ export class ChineseRenderer {
           `${index + 1}. ${item.name} (id=${item.id}${"country" in item && item.country ? `, country=${item.country}` : ""})`
       ),
       "",
-      `【更新时间】${formatDateTime(response.meta.fetched_at, response.meta.timezone)}`,
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`,
       `【来源】${response.meta.source}`
     ].join("\n");
   }
@@ -165,7 +162,6 @@ export class ChineseRenderer {
       return this.renderError(title, response);
     }
 
-    const timezone = (response.query.timezone as string) || "Asia/Shanghai";
     const emptyText = scheduled ? "暂无匹配赛程" : "暂无比赛数据";
     const lines = response.items?.length
       ? response.items
@@ -174,7 +170,7 @@ export class ChineseRenderer {
             const team1 = formatTeamDisplayName(item.team1) ?? item.team1 ?? "TBD";
             const team2 = formatTeamDisplayName(item.team2) ?? item.team2 ?? "TBD";
             const event = formatEventDisplayName(item.event) ?? item.event;
-            return `${index + 1}. ${team1} vs ${team2}${item.score ? ` — ${item.score}` : ""}${event ? ` — ${event}` : ""}${timeValue ? ` — ${formatDateTime(timeValue, timezone)}` : ""}`;
+            return `${index + 1}. ${team1} vs ${team2}${item.score ? ` — ${item.score}` : ""}${event ? ` — ${event}` : ""}${timeValue ? ` — ${formatDateTime(timeValue)}` : ""}`;
           })
           .join("\n")
       : emptyText;
@@ -188,7 +184,7 @@ export class ChineseRenderer {
       summary,
       "",
       ...this.renderReasonSection(response),
-      `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`,
       `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
     ].join("\n");
   }
@@ -211,7 +207,7 @@ export class ChineseRenderer {
       ...detailLines,
       ...(response.meta.notes?.map((note) => `- 原因：${note}`) ?? []),
       response.meta.stale ? "已尝试使用缓存回退。" : "",
-      `【更新时间】${formatDateTime(response.meta.fetched_at, response.meta.timezone)}`,
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`,
       `【来源】${response.meta.source}`
     ]
       .filter(Boolean)

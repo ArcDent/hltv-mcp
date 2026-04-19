@@ -16,7 +16,13 @@ import type {
   TeamRecentQuery,
   UpcomingMatchesQuery
 } from "../types/hltv.js";
-import { dateKeyInTimezone, dateTimeToTimestamp, nowIso, todayDateKey } from "../utils/time.js";
+import {
+  FIXED_TIMEZONE,
+  dateKeyInFixedTimezone,
+  dateTimeToTimestamp,
+  nowIso,
+  todayDateKey
+} from "../utils/time.js";
 import { includesIgnoreCase, parseHltvEntityLink, sanitizeHltvText } from "../utils/strings.js";
 import { HltvApiClient } from "../clients/hltvApiClient.js";
 import { PlayerResolver } from "../resolvers/playerResolver.js";
@@ -151,7 +157,6 @@ export class HltvFacade {
       include_upcoming: query.include_upcoming ?? true,
       include_recent_results: query.include_recent_results ?? true,
       detail: query.detail ?? "standard",
-      timezone: query.timezone ?? this.config.defaultTimezone,
       exact: query.exact ?? false
     };
     const cacheKey = `team_recent:${JSON.stringify(normalizedQuery)}`;
@@ -203,7 +208,6 @@ export class HltvFacade {
       player_name: query.player_name,
       limit: query.limit ?? this.config.defaultResultLimit,
       detail: query.detail ?? "standard",
-      timezone: query.timezone ?? this.config.defaultTimezone,
       exact: query.exact ?? false
     };
     const cacheKey = `player_recent:${JSON.stringify(normalizedQuery)}`;
@@ -263,8 +267,7 @@ export class HltvFacade {
       team: query.team,
       event: query.event,
       limit: query.limit ?? this.config.defaultResultLimit,
-      days: query.days ?? 7,
-      timezone: query.timezone ?? this.config.defaultTimezone
+      days: query.days ?? 7
     };
     const cacheKey = `results_recent:${JSON.stringify(normalizedQuery)}`;
 
@@ -284,8 +287,7 @@ export class HltvFacade {
         event: normalizedQuery.event,
         days: normalizedQuery.days,
         scheduled: false,
-        todayOnly: false,
-        timezone: normalizedQuery.timezone
+        todayOnly: false
       });
 
       return {
@@ -318,7 +320,6 @@ export class HltvFacade {
       event: normalizedEvent,
       limit: todayOnly ? undefined : effectiveQuery.limit ?? this.config.defaultResultLimit,
       days: todayOnly ? undefined : effectiveQuery.days ?? 7,
-      timezone: effectiveQuery.timezone ?? this.config.defaultTimezone,
       today_only: todayOnly
     };
     const cacheKey = `matches_upcoming:${JSON.stringify(normalizedQuery)}`;
@@ -328,7 +329,7 @@ export class HltvFacade {
       const rawMatches = await this.client.getUpcomingMatches();
       const parsedItems = normalizeUpcomingMatches(rawMatches);
       const windowedItems = normalizedQuery.today_only
-        ? this.filterMatchesToToday(parsedItems, normalizedQuery.timezone)
+        ? this.filterMatchesToToday(parsedItems)
         : this.applyTimeWindow(parsedItems, normalizedQuery.days ?? 7, true);
       const filteredItems = windowedItems.filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event));
       const items =
@@ -341,8 +342,7 @@ export class HltvFacade {
         event: normalizedQuery.event,
         days: normalizedQuery.days,
         scheduled: true,
-        todayOnly: normalizedQuery.today_only,
-        timezone: normalizedQuery.timezone
+        todayOnly: normalizedQuery.today_only
       });
 
       return {
@@ -366,8 +366,7 @@ export class HltvFacade {
       limit: query.limit ?? this.config.defaultResultLimit,
       tag: query.tag,
       year: query.year,
-      month: query.month,
-      timezone: query.timezone ?? this.config.defaultTimezone
+      month: query.month
     };
     const cacheKey = `news_digest:${JSON.stringify(normalizedQuery)}`;
 
@@ -1135,16 +1134,16 @@ export class HltvFacade {
     return matchTeamNames([item.team1, item.team2, item.opponent], teamFilter.names);
   }
 
-  private filterMatchesToToday(matches: NormalizedMatch[], timezone: string): NormalizedMatch[] {
-    const currentDay = todayDateKey(timezone);
-    return matches.filter((item) => dateKeyInTimezone(item.scheduled_at, timezone) === currentDay);
+  private filterMatchesToToday(matches: NormalizedMatch[]): NormalizedMatch[] {
+    const currentDay = todayDateKey();
+    return matches.filter((item) => dateKeyInFixedTimezone(item.scheduled_at) === currentDay);
   }
 
   private createMeta(ttlSec: number, overrides: Partial<ToolMeta> = {}): ToolMeta {
     return {
       source: "hltv-scraper-api",
       fetched_at: nowIso(),
-      timezone: this.config.defaultTimezone,
+      timezone: FIXED_TIMEZONE,
       cache_hit: false,
       ttl_sec: ttlSec,
       schema_version: "1.0",
@@ -1282,8 +1281,7 @@ export class HltvFacade {
     event,
     days,
     scheduled,
-    todayOnly,
-    timezone
+    todayOnly
   }: {
     parsedItems: NormalizedMatch[];
     windowedItems: NormalizedMatch[];
@@ -1293,7 +1291,6 @@ export class HltvFacade {
     days?: number;
     scheduled: boolean;
     todayOnly?: boolean;
-    timezone: string;
   }): string[] {
     const notes: string[] = [];
     if (filteredItems.length) {
@@ -1307,7 +1304,7 @@ export class HltvFacade {
 
     if (!windowedItems.length) {
       if (todayOnly) {
-        notes.push(`当前为无参数默认模式：仅展示 ${timezone} 时区的今日比赛；今天暂无可展示赛程。`);
+        notes.push(`当前为无参数默认模式：仅展示 ${FIXED_TIMEZONE} 时区的今日比赛；今天暂无可展示赛程。`);
       } else {
         notes.push(`时间窗口过滤为最近 ${days} 天，但当前没有记录落在该时间范围内。`);
       }
@@ -1327,7 +1324,7 @@ export class HltvFacade {
     }
 
     if (todayOnly) {
-      notes.push(`当前为无参数默认模式：仅展示 ${timezone} 时区的今日比赛。`);
+      notes.push(`当前为无参数默认模式：仅展示 ${FIXED_TIMEZONE} 时区的今日比赛。`);
     } else {
       notes.push(`时间窗口过滤为最近 ${days} 天，超出窗口的记录已被排除。`);
     }
