@@ -362,8 +362,14 @@ export class HltvFacade {
   }
 
   async getNewsDigest(query: NewsDigestQuery): Promise<ToolResponse<never, NewsItem>> {
+    const limit = query.limit ?? 25;
+    const normalizedOffset = query.offset ?? (query.page && query.page > 1 ? (query.page - 1) * limit : 0);
+    const normalizedPage = Math.floor(normalizedOffset / limit) + 1;
+
     const normalizedQuery = {
-      limit: query.limit ?? this.config.defaultResultLimit,
+      limit,
+      offset: normalizedOffset,
+      page: normalizedPage,
       tag: query.tag,
       year: query.year,
       month: query.month
@@ -373,23 +379,28 @@ export class HltvFacade {
     return this.withCache(cacheKey, this.config.newsCacheTtlSec, normalizedQuery, async () => {
       const rawNews = await this.client.getNews(normalizedQuery.year, normalizedQuery.month);
       const normalizedItems = normalizeNews(rawNews);
-      const items = normalizedItems
-        .filter((item) => {
-          if (!normalizedQuery.tag) {
-            return true;
-          }
 
-          return (
-            includesIgnoreCase(item.title, normalizedQuery.tag) ||
-            includesIgnoreCase(item.summary_hint, normalizedQuery.tag) ||
-            includesIgnoreCase(item.tag, normalizedQuery.tag)
-          );
-        })
-        .slice(0, normalizedQuery.limit);
+      const filteredItems = normalizedItems.filter((item) => {
+        if (!normalizedQuery.tag) {
+          return true;
+        }
+
+        return (
+          includesIgnoreCase(item.title, normalizedQuery.tag) ||
+          includesIgnoreCase(item.summary_hint, normalizedQuery.tag) ||
+          includesIgnoreCase(item.tag, normalizedQuery.tag)
+        );
+      });
+
+      const items = filteredItems.slice(normalizedQuery.offset, normalizedQuery.offset + normalizedQuery.limit);
+      const total = filteredItems.length;
+      const hasMore = normalizedQuery.offset + items.length < total;
+      const currentPage = normalizedQuery.page;
+
       const notes = this.collectNewsNotes({
         rawNews,
         normalizedItems,
-        filteredItems: items,
+        filteredItems,
         tag: normalizedQuery.tag,
         year: normalizedQuery.year,
         month: normalizedQuery.month
@@ -400,7 +411,17 @@ export class HltvFacade {
         items,
         meta: this.createMeta(this.config.newsCacheTtlSec, {
           partial: notes.length > 0,
-          notes
+          notes,
+          pagination: {
+            offset: normalizedQuery.offset,
+            limit: normalizedQuery.limit,
+            returned: items.length,
+            total,
+            has_more: hasMore,
+            current_page: currentPage,
+            next_offset: hasMore ? normalizedQuery.offset + normalizedQuery.limit : undefined,
+            next_page: hasMore ? currentPage + 1 : undefined
+          }
         }),
         error: null
       };

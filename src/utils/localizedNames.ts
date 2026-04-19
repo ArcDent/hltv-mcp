@@ -1,10 +1,15 @@
 import { normalizeLookupName, uniqueStrings } from "../resolvers/entityIdentity.js";
 import { sanitizeHltvText } from "./strings.js";
+import {
+  expandCatalogTeamAliases,
+  lookupCatalogTeamEntry
+} from "./teamAliasCatalog.js";
 
 type NameKind = "team" | "event";
 
 interface LocalizationDefinition {
   canonicalEnglish: string;
+  displayName?: string;
   officialZh?: string;
   colloquialZh?: string;
   aliases?: string[];
@@ -643,6 +648,34 @@ function deriveEventLocalization(name: string): LocalizationDefinition | undefin
   return undefined;
 }
 
+function deriveTeamLocalization(name: string): LocalizationDefinition {
+  const catalogEntry = lookupCatalogTeamEntry(name);
+  if (catalogEntry) {
+    return {
+      canonicalEnglish: catalogEntry.canonicalName,
+      displayName: catalogEntry.displayName,
+      officialZh: catalogEntry.officialName,
+      colloquialZh: catalogEntry.displayAlias,
+      aliases: expandCatalogTeamAliases(name)
+    };
+  }
+
+  const legacyEntry = findCatalogMatch(name, TEAM_CATALOG);
+  if (legacyEntry) {
+    return {
+      ...legacyEntry,
+      displayName: name
+    };
+  }
+
+  return {
+    canonicalEnglish: name,
+    displayName: name,
+    officialZh: `${name}战队`,
+    aliases: [name, `${name}战队`]
+  };
+}
+
 function lookupLocalization(name: string | undefined, kind: NameKind): LocalizationDefinition | undefined {
   const sanitized = sanitizeHltvText(name);
   if (!sanitized) {
@@ -650,13 +683,7 @@ function lookupLocalization(name: string | undefined, kind: NameKind): Localizat
   }
 
   if (kind === "team") {
-    return (
-      findCatalogMatch(sanitized, TEAM_CATALOG) ?? {
-        canonicalEnglish: sanitized,
-        officialZh: `${sanitized}战队`,
-        aliases: [sanitized, `${sanitized}战队`]
-      }
-    );
+    return deriveTeamLocalization(sanitized);
   }
 
   return deriveEventLocalization(sanitized);
@@ -689,7 +716,11 @@ function formatDisplayName(name: string | undefined, kind: NameKind): string | u
     return sanitized;
   }
 
-  return uniqueStrings([sanitized, localization.officialZh, localization.colloquialZh]).join("/");
+  return uniqueStrings([
+    kind === "team" ? localization.displayName ?? sanitized : sanitized,
+    localization.officialZh,
+    localization.colloquialZh
+  ]).join("/");
 }
 
 function aliasesOverlap(left: string[], right: string[]): boolean {

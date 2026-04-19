@@ -9,6 +9,17 @@ export interface ToolError {
   details?: Record<string, unknown>;
 }
 
+export interface PaginationMeta {
+  offset: number;
+  limit: number;
+  returned: number;
+  total: number;
+  has_more: boolean;
+  current_page: number;
+  next_offset?: number;
+  next_page?: number;
+}
+
 export interface ToolMeta {
   source: string;
   fetched_at: string;
@@ -19,6 +30,7 @@ export interface ToolMeta {
   partial: boolean;
   notes?: string[];
   stale?: boolean;
+  pagination?: PaginationMeta;
 }
 
 export interface ToolResponse<

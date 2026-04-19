@@ -109,6 +109,7 @@ export class SummaryService {
     }
 
     const focus = response.items.slice(0, 3).map((item) => item.title).join("；");
-    return `当前新闻重点集中在：${focus}。如需更细粒度分析，可继续增加 tag 或时间范围过滤。`;
+    const paginationHint = response.meta.pagination?.has_more ? "如需下一批结果，可继续翻页。" : "当前已展示到可用结果末尾。";
+    return `当前这批新闻重点集中在：${focus}。${paginationHint} 如需更细粒度分析，可继续增加 tag 或时间范围过滤。`;
   }
 }

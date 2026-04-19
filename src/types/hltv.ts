@@ -55,6 +55,8 @@ export interface NewsDigestQuery {
   tag?: string;
   year?: number;
   month?: number | string;
+  page?: number;
+  offset?: number;
 }
 
 export interface ResolvedTeamEntity {
