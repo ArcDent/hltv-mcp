@@ -61,6 +61,8 @@ export interface NewsDigestQuery {
   year?: number;
   month?: number | string;
   timezone?: string;
+  page?: number;
+  offset?: number;
 }
 
 export interface ResolvedTeamEntity {

@@ -315,10 +315,16 @@ examples/opencode-project/
 - `/player ZywOo`
 - `/result`
 - `/match`（只支持无参数，用于查询今日赛程）
-- `/news`
+- `/news`（默认 25 条，支持“继续”读取下一批，最终展示可带中文标题）
 
 > 模板默认写死使用 `hltv_local_` 前缀。  
 > 如果你的 MCP 名称不是 `hltv_local`，请先把模板里的工具名前缀改掉再使用。
+
+当前 `/news` 模板约定：
+
+- 默认调用 `hltv_local_hltv_news_digest({ limit: 25, timezone: "Asia/Shanghai" })`
+- 支持根据上一轮返回的分页元信息继续读取下一批（如 `next_page` / `next_offset`）
+- 最终 slash-command 输出默认不展示数据源字段，可由助手基于英文原标题补充中文标题；MCP 工具原始结果仍以英文标题为准
 
 ---
 

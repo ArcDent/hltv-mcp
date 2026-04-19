@@ -98,9 +98,11 @@ export const matchCommandParseSchema = {
 };
 
 export const newsSchema = {
-  limit: z.number().int().min(1).max(20).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
   tag: z.string().min(1).optional(),
   year: z.number().int().min(2000).max(3000).optional(),
   month: z.union([z.number().int().min(1).max(12), z.string().min(1)]).optional(),
-  timezone: z.string().min(1).optional()
+  timezone: z.string().min(1).optional(),
+  page: z.number().int().min(1).optional(),
+  offset: z.number().int().min(0).optional()
 };

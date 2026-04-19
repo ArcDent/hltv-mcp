@@ -25,8 +25,8 @@ export const COMMAND_REGISTRY = {
   },
   news: {
     aliases: ["news", "新闻", "n"],
-    description: "查看新闻集合",
-    usage: "/News [count] [tag]"
+    description: "查看新闻集合（默认 25 条，支持继续分页）",
+    usage: "/News [count] [tag] [page] [offset]"
   }
 } as const;
 
@@ -68,10 +68,13 @@ export class CommandHandlers {
     return this.renderer.renderMatches(response);
   }
 
-  async news(count = 5, tag?: string): Promise<string> {
+  async news(count = 25, tag?: string, page?: number, offset?: number): Promise<string> {
     const response = await this.facade.getNewsDigest({
       limit: count,
-      tag
+      tag,
+      page,
+      offset,
+      timezone: "Asia/Shanghai"
     });
     return this.renderer.renderNews(response);
   }

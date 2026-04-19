@@ -111,26 +111,42 @@ export class ChineseRenderer {
 
     const summary = this.summaryService.summarizeNews(response);
     const timezone = (response.query.timezone as string) || "Asia/Shanghai";
+    const pagination = response.meta.pagination;
+    const paginationRange = pagination
+      ? pagination.returned
+        ? `${pagination.offset + 1}-${pagination.offset + pagination.returned}`
+        : `0 条`
+      : null;
     const lines = response.items?.length
       ? response.items
           .map(
             (item, index) =>
-              `${index + 1}. ${item.title}${item.published_at ? ` — ${formatDateTime(item.published_at, timezone)}` : ""}`
+              `${index + 1}. ${item.title}${item.published_at ? ` — ${formatDateTime(item.published_at, timezone)}` : ""}${item.tag ? ` — 标签：${item.tag}` : ""}`
           )
           .join("\n")
-      : "暂无新闻数据";
+      : "暂无匹配新闻";
+
+    const paginationLines = pagination
+      ? [
+          "",
+          `【分页】当前 ${paginationRange} / 共 ${pagination.total}`,
+          pagination.has_more
+            ? `可继续下一页：回复“继续”，或使用 page=${pagination.next_page} / offset=${pagination.next_offset}`
+            : "已到最后一页"
+        ]
+      : [];
 
     return [
       "【新闻集合】",
       "",
       lines,
+      ...paginationLines,
       "",
       "【中文总结】",
       summary,
       "",
       ...this.renderReasonSection(response),
-      `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`,
-      `【来源】${response.meta.source}${response.meta.stale ? "（缓存回退）" : ""}`
+      `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`
     ].join("\n");
   }
 
