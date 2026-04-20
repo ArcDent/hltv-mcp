@@ -11,8 +11,7 @@ agent: build
 
 1. 调用 `hltv_local_hltv_news_digest`。
 2. 如果 `$ARGUMENTS` 为空，默认查询最新新闻，建议参数：
-   - `limit`: `25`
-   - `timezone`: `Asia/Shanghai`
+ - `limit`: `25`
 3. 如果 `$ARGUMENTS` 中明显包含标签、赛事词或主题词，尽量提取为 `tag`。
 4. 如果用户回复“继续”，优先沿用上一轮查询条件，并优先使用上一轮工具返回的 `next_offset` 或 `next_page` 继续取下一批 25 条。
 5. 输出时保留：

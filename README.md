@@ -74,10 +74,13 @@ npm run start
 HLTV_API_BASE_URL=http://127.0.0.1:8020
 HLTV_API_FALLBACK_BASE_URL=
 HLTV_API_TIMEOUT_MS=8000
-DEFAULT_TIMEZONE=Asia/Shanghai
 DEFAULT_RESULT_LIMIT=5
 SUMMARY_MODE=template
 ```
+
+- 服务当前所有时间输出固定使用 `Asia/Shanghai`。
+- 不再支持通过 tool 参数或环境变量传入 `timezone`。
+- `/match` 的“今日赛程”语义按 `Asia/Shanghai` 日界线解释。
 
 ---
 
@@ -95,7 +98,7 @@ SUMMARY_MODE=template
 - **`hltv_results_recent` / `hltv_matches_upcoming` 支持 `team_id` 过滤**：
   - 可只传 `team_id`，也可与 `team` 同时传；
   - 过滤时会优先匹配队伍 ID，并结合名称别名做补充匹配。
-- **`hltv_matches_upcoming` 无参数时默认返回当前时区下的今日全部比赛**：
+- **`hltv_matches_upcoming` 无参数时默认返回 `Asia/Shanghai` 时区下的今日全部比赛**：
   - 不再默认只取 `5` 条未来比赛；
   - 输出中的队伍名与赛事名会尽量按 `英文原名/<中文译名官称>/<民间翻译（如果有）>` 展示；
   - 赛事与队伍过滤也会一并兼容这些中英别名。
@@ -160,7 +163,6 @@ dist/index.js
         // Optional for WSL when upstream runs on the Windows host:
         // "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
         "HLTV_API_TIMEOUT_MS": "8000",
-        "DEFAULT_TIMEZONE": "Asia/Shanghai",
         "DEFAULT_RESULT_LIMIT": "5",
         "SUMMARY_MODE": "template"
       }
@@ -322,7 +324,7 @@ examples/opencode-project/
 
 当前 `/news` 模板约定：
 
-- 默认调用 `hltv_local_hltv_news_digest({ limit: 25, timezone: "Asia/Shanghai" })`
+- 默认调用 `hltv_local_hltv_news_digest({ limit: 25 })`
 - 支持根据上一轮返回的分页元信息继续读取下一批（如 `next_page` / `next_offset`）
 - 最终 slash-command 输出默认不展示数据源字段，可由助手基于英文原标题补充中文标题；MCP 工具原始结果仍以英文标题为准
 
@@ -358,7 +360,6 @@ examples/opencode-project/
     "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
     "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
     "HLTV_API_TIMEOUT_MS": "8000",
-    "DEFAULT_TIMEZONE": "Asia/Shanghai",
     "DEFAULT_RESULT_LIMIT": "5",
     "SUMMARY_MODE": "template"
   }

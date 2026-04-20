@@ -62,7 +62,6 @@ function createConfig(): AppConfig {
     hltvApiBaseUrl: "http://127.0.0.1:8020",
     hltvApiBaseUrls: ["http://127.0.0.1:8020"],
     hltvApiTimeoutMs: 1_000,
-    defaultTimezone: "Asia/Shanghai",
     defaultResultLimit: 5,
     summaryMode: "template",
     entityCacheTtlSec: 60,
@@ -91,7 +90,7 @@ test("news digest defaults to 25 items and exposes continuation metadata", async
     {} as never
   );
 
-  const response = await facade.getNewsDigest({ timezone: "Asia/Shanghai" });
+  const response = await facade.getNewsDigest({});
 
   assert.equal(response.items?.length, 25);
   assert.equal(response.items?.[0]?.title, "Story 1");
@@ -116,12 +115,12 @@ test("news digest supports page and offset after tag filtering", async () => {
     {} as never
   );
 
-  const byPage = await facade.getNewsDigest({ limit: 10, page: 2, tag: "Rio", timezone: "Asia/Shanghai" });
+  const byPage = await facade.getNewsDigest({ limit: 10, page: 2, tag: "Rio" });
   assert.equal(byPage.items?.[0]?.title, "Story 21");
   assert.equal(byPage.meta.pagination?.offset, 10);
   assert.equal(byPage.meta.pagination?.current_page, 2);
 
-  const byOffset = await facade.getNewsDigest({ limit: 10, offset: 20, tag: "Rio", timezone: "Asia/Shanghai" });
+  const byOffset = await facade.getNewsDigest({ limit: 10, offset: 20, tag: "Rio" });
   assert.equal(byOffset.items?.[0]?.title, "Story 41");
   assert.equal(byOffset.meta.pagination?.offset, 20);
 });
@@ -151,7 +150,6 @@ export interface PaginationMeta {
 export interface ToolMeta {
   source: string;
   fetched_at: string;
-  timezone: string;
   cache_hit: boolean;
   ttl_sec: number;
   schema_version: string;
@@ -169,7 +167,6 @@ export interface NewsDigestQuery {
   tag?: string;
   year?: number;
   month?: number | string;
-  timezone?: string;
   page?: number;
   offset?: number;
 }
@@ -182,7 +179,6 @@ export const newsSchema = {
   tag: z.string().min(1).optional(),
   year: z.number().int().min(2000).max(3000).optional(),
   month: z.union([z.number().int().min(1).max(12), z.string().min(1)]).optional(),
-  timezone: z.string().min(1).optional(),
   page: z.number().int().min(1).optional(),
   offset: z.number().int().min(0).optional()
 };
@@ -302,7 +298,7 @@ test("renderNews omits source, uses shanghai fallback, and shows continuation hi
 test("renderNews uses 暂无匹配新闻 for empty pages", () => {
   const renderer = new ChineseRenderer(new SummaryService("raw"));
   const response: ToolResponse<never, NewsItem> = {
-    query: { timezone: "Asia/Shanghai" },
+    query: {},
     items: [],
     meta: {
       source: "hltv-scraper-api",
@@ -385,8 +381,7 @@ export const COMMAND_REGISTRY = {
 async news(count = 25, tag?: string): Promise<string> {
   const response = await this.facade.getNewsDigest({
     limit: count,
-    tag,
-    timezone: "Asia/Shanghai"
+    tag
   });
   return this.renderer.renderNews(response);
 }
@@ -400,7 +395,7 @@ const lines = response.items?.length
       .map((item, index) => {
         const pieces = [`${index + 1}. ${item.title}`];
         if (item.published_at) {
-          pieces.push(formatDateTime(item.published_at, timezone));
+          pieces.push(formatDateTime(item.published_at));
         }
         if (item.tag) {
           pieces.push(`标签：${item.tag}`);
@@ -431,7 +426,7 @@ return [
   summary,
   "",
   ...this.renderReasonSection(response),
-  `【更新时间】${formatDateTime(response.meta.fetched_at, timezone)}`
+  `【更新时间】${formatDateTime(response.meta.fetched_at)}`
 ].join("\n");
 ```
 
@@ -440,7 +435,6 @@ return [
 1. 调用 `hltv_local_hltv_news_digest`。
 2. 如果 `$ARGUMENTS` 为空，默认查询最新新闻，建议参数：
    - `limit`: `25`
-   - `timezone`: `Asia/Shanghai`
 3. 如果用户回复“继续”，优先沿用上一轮查询条件，并使用上一轮返回的 `next_offset` 或 `next_page` 继续取下一批 25 条。
 4. 输出时保留：
    - 中文标题（根据英文原标题生成简洁中文标题）

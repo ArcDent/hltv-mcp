@@ -103,7 +103,7 @@ export function createMcpServer(
 
   server.tool(
     "hltv_matches_today",
-    "Get today's HLTV matches in the active timezone. Use this for bare /match with no arguments so the tool call stays parameter-free.",
+    "Get today's HLTV matches in fixed Asia/Shanghai time. Use this for bare /match with no arguments so the tool call stays parameter-free.",
     matchesTodaySchema,
     async () => {
       const response = await facade.getTodayMatches();
@@ -113,7 +113,7 @@ export function createMcpServer(
 
   server.tool(
     "hltv_matches_upcoming",
-    "Get upcoming HLTV matches for explicit filters. For bare /match, prefer hltv_matches_today instead of this tool. For generic requests like 'today matches', '今日赛程', or '今天有什么比赛', omit team/event/limit/days and call with {} (or only timezone).",
+    "Get upcoming HLTV matches for explicit filters. For bare /match, prefer hltv_matches_today instead of this tool. For generic requests like 'today matches', '今日赛程', or '今天有什么比赛', omit team/event/limit/days and call with {}.",
     matchesSchema,
     async (input) => {
       const response = await facade.getUpcomingMatches(input);

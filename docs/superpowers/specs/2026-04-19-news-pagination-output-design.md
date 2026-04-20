@@ -30,7 +30,7 @@
 - `limit?: number`，新闻默认值改为 `25`，并放宽上限以容纳用户要求。
 - `page?: number`，用于页码式分页。
 - `offset?: number`，用于偏移式分页。
-- 保留 `tag/year/month/timezone`。
+- 保留 `tag/year/month`，不再暴露 `timezone` 请求参数。
 
 分页计算规则：
 
@@ -70,7 +70,7 @@
 
 1. 空结果统一显示 `暂无匹配新闻`。
 2. 删除 `【来源】` 行。
-3. 更新时间继续使用 `formatDateTime(..., timezone)`，但新闻默认时区固定回落为 `Asia/Shanghai`。
+3. 更新时间继续使用固定 `Asia/Shanghai` 的时间格式化辅助函数，不再依赖运行时 `timezone` 参数。
 4. 若存在 `meta.pagination`，在正文后追加当前区间、总数和下一页提示。
 5. tag 不再强制输出；只有在条目里存在 tag 且确有必要时才显示。
 
@@ -80,9 +80,8 @@
 
 1. 默认调用 `hltv_local_hltv_news_digest`，参数为：
    - `limit: 25`
-   - `timezone: "Asia/Shanghai"`
 2. 若 `$ARGUMENTS` 中出现赛事词、标签词、主题词，提取为 `tag`。
-3. 若用户只说“继续”，优先根据上一轮工具结果中的分页元信息继续下一页，默认沿用原来的 `tag/year/month/timezone/limit`。
+3. 若用户只说“继续”，优先根据上一轮工具结果中的分页元信息继续下一页，默认沿用原来的 `tag/year/month/limit`。
 4. 最终输出字段调整为：
    - 中文标题
    - 英文原标题

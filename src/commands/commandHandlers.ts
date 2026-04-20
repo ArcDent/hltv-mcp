@@ -73,8 +73,7 @@ export class CommandHandlers {
       limit: count,
       tag,
       page,
-      offset,
-      timezone: "Asia/Shanghai"
+      offset
     });
     return this.renderer.renderNews(response);
   }

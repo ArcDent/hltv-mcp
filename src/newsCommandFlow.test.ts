@@ -14,11 +14,10 @@ import type { NewsItem } from "./types/hltv.js";
 function createConfig(): AppConfig {
   return {
     mcpServerName: "hltv-mcp-service",
-    mcpServerVersion: "0.2.0",
+    mcpServerVersion: "0.3.0",
     hltvApiBaseUrl: "http://127.0.0.1:8020",
     hltvApiBaseUrls: ["http://127.0.0.1:8020"],
     hltvApiTimeoutMs: 1_000,
-    defaultTimezone: "Asia/Shanghai",
     defaultResultLimit: 5,
     summaryMode: "template",
     entityCacheTtlSec: 60,
@@ -63,7 +62,7 @@ test("news digest defaults to 25 items and exposes continuation metadata", async
     {} as never
   );
 
-  const response = await facade.getNewsDigest({ timezone: "Asia/Shanghai" });
+  const response = await facade.getNewsDigest({});
 
   assert.equal(response.items?.length, 25);
   assert.equal(response.items?.[0]?.title, "Story 1");
@@ -92,8 +91,7 @@ test("news digest supports page/offset after tag filtering", async () => {
   const byPage = await facade.getNewsDigest({
     limit: 10,
     page: 2,
-    tag: "Rio",
-    timezone: "Asia/Shanghai"
+    tag: "Rio"
   });
   assert.equal(byPage.items?.[0]?.title, "Story 21");
   assert.equal(byPage.query.offset, 10);
@@ -106,8 +104,7 @@ test("news digest supports page/offset after tag filtering", async () => {
     limit: 10,
     offset: 20,
     page: 2,
-    tag: "Rio",
-    timezone: "Asia/Shanghai"
+    tag: "Rio"
   });
   assert.equal(byOffset.items?.[0]?.title, "Story 41");
   assert.equal(byOffset.query.offset, 20);
@@ -136,8 +133,7 @@ test("news digest cache key uses effective pagination when offset is provided", 
     limit: 10,
     offset: 20,
     page: 99,
-    tag: "Rio",
-    timezone: "Asia/Shanghai"
+    tag: "Rio"
   });
   assert.equal(first.meta.cache_hit, false);
   assert.equal(first.query.page, first.meta.pagination?.current_page);
@@ -146,8 +142,7 @@ test("news digest cache key uses effective pagination when offset is provided", 
     limit: 10,
     offset: 20,
     page: 1,
-    tag: "Rio",
-    timezone: "Asia/Shanghai"
+    tag: "Rio"
   });
   assert.equal(second.meta.cache_hit, true);
   assert.equal(second.query.page, second.meta.pagination?.current_page);
@@ -186,12 +181,13 @@ test("renderNews omits source, uses shanghai fallback, and shows continuation hi
   assert.match(text, /IEM Rio/);
   assert.match(text, /下一页|继续|offset=25|page=2/);
   assert.doesNotMatch(text, /【来源】/);
+  assert.equal(text.match(/【更新时间】/g)?.length ?? 0, 1);
 });
 
 test("renderNews uses 暂无匹配新闻 for empty pages", () => {
   const renderer = new ChineseRenderer(new SummaryService("raw"));
   const response: ToolResponse<never, NewsItem> = {
-    query: { timezone: "Asia/Shanghai" },
+    query: {},
     items: [],
     meta: {
       source: "hltv-scraper-api",
@@ -220,12 +216,10 @@ test("renderNews uses 暂无匹配新闻 for empty pages", () => {
 
 test("news command defaults to 25 and docs mention continuation plus chinese titles", async () => {
   let receivedLimit: number | undefined;
-  let receivedTimezone: string | undefined;
   const handlers = new CommandHandlers(
     {
-      getNewsDigest: async (query: { limit?: number; timezone?: string }) => {
+      getNewsDigest: async (query: { limit?: number }) => {
         receivedLimit = query.limit;
-        receivedTimezone = query.timezone;
         return {
           query,
           items: [],
@@ -250,21 +244,19 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
   await handlers.news();
 
   assert.equal(receivedLimit, 25);
-  assert.equal(receivedTimezone, "Asia/Shanghai");
   assert.match(COMMAND_REGISTRY.news.usage, /25|page|offset/i);
   assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /继续/);
   assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /中文标题/);
   assert.doesNotMatch(readProjectText("docs/templates/opencode.commands.news.md"), /来源/);
 });
 
-test("news command forwards explicit page and offset with shanghai timezone", async () => {
+test("news command forwards explicit page and offset", async () => {
   let receivedQuery:
     | {
         limit?: number;
         tag?: string;
         page?: number;
         offset?: number;
-        timezone?: string;
       }
     | undefined;
 
@@ -275,7 +267,6 @@ test("news command forwards explicit page and offset with shanghai timezone", as
         tag?: string;
         page?: number;
         offset?: number;
-        timezone?: string;
       }) => {
         receivedQuery = query;
         return {
@@ -305,7 +296,6 @@ test("news command forwards explicit page and offset with shanghai timezone", as
     limit: 25,
     tag: "iem-rio",
     page: 2,
-    offset: 25,
-    timezone: "Asia/Shanghai"
+    offset: 25
   });
 });

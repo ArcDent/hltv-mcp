@@ -87,12 +87,10 @@ function isSuspiciousAutofilledUpcomingFilterText(value: string | undefined): bo
 export function isLikelyAutofilledUpcomingQuery(query: UpcomingMatchesQuery): boolean {
   const hasExplicitPlaceholderFields =
     Object.prototype.hasOwnProperty.call(query, "team") && Object.prototype.hasOwnProperty.call(query, "event");
-  const normalizedTimezone = sanitizeHltvText(query.timezone)?.toUpperCase();
   const suspiciousSentinelPayload =
     hasExplicitPlaceholderFields &&
     query.limit === 1 &&
-    query.days === 1 &&
-    (normalizedTimezone === undefined || normalizedTimezone === "UTC");
+    query.days === 1;
 
   if (!suspiciousSentinelPayload) {
     return false;
