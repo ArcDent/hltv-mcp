@@ -2,6 +2,13 @@
 
 这是一个**不会自动生效**的 OpenCode 示例目录。
 
+这个示例默认按**外部上游模式**提供配置，也就是：
+
+- 显式设置 `HLTV_UPSTREAM_MANAGED=false`
+- 由你自己准备并启动 `HLTV_API_BASE_URL` 指向的上游 API
+
+如果你想使用当前分支新增的 **managed upstream** 默认模式，请不要直接照抄这里的 `opencode.jsonc`；那种模式要求你先准备好仓库里的 Python 解释器（默认是 `hltv-api-fixed/env/bin/python`），否则 MCP 进程会在启动时 fail fast，OpenCode 也就无法连上这个 MCP。
+
 之所以放在 `examples/opencode-project/` 下，而不是仓库根目录，是为了避免 OpenCode 在打开本仓库时误把这些示例当成 live 配置直接加载。
 
 ## 目录内容
@@ -24,6 +31,11 @@ examples/opencode-project/
 
 - `examples/opencode-project/opencode.jsonc` -> `你的项目/opencode.jsonc`
 - `examples/opencode-project/.opencode/commands/*.md` -> `你的项目/.opencode/commands/`
+
+复制完以后，请确认 `opencode.jsonc` 里的运行模式与你的实际部署一致：
+
+- **外部上游模式（推荐给 OpenCode 示例使用）**：保留 `"HLTV_UPSTREAM_MANAGED": "false"`，并确保 `HLTV_API_BASE_URL` 指向一个已经在运行的 upstream API
+- **managed upstream 模式**：删除或改写示例里的外部模式配置，并先准备 `hltv-api-fixed/env/bin/python`，或者显式设置 `HLTV_UPSTREAM_PYTHON_PATH`
 
 如果你是在 **WSL** 中运行 OpenCode / MCP，请把示例里的 MCP 启动路径改成 **WSL/Linux 可访问路径**，例如 `/home/you/.../dist/index.js` 或 `/mnt/c/.../dist/index.js`，不要直接照抄 `C:/...`。
 

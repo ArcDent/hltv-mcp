@@ -116,3 +116,20 @@ test("AGENTS.md documents managed upstream default and external mode switch", ()
   assert.match(agents, /(default\s+managed\s+upstream|managed\s+upstream\s+is\s+the\s+default)/i);
   assert.match(agents, /HLTV_UPSTREAM_MANAGED=false/);
 });
+
+test("OpenCode templates and examples explicitly disable managed mode when using HLTV_API_BASE_URL", () => {
+  const templateConfig = readProjectFile("docs/templates/opencode.jsonc");
+  const exampleConfig = readProjectFile("examples/opencode-project/opencode.jsonc");
+  const exampleReadme = readProjectFile("examples/opencode-project/README.md");
+
+  assert.match(templateConfig, /"HLTV_UPSTREAM_MANAGED"\s*:\s*"false"/);
+  assert.match(templateConfig, /"HLTV_API_BASE_URL"\s*:\s*"http:\/\/127\.0\.0\.1:8020"/);
+
+  assert.match(exampleConfig, /"HLTV_UPSTREAM_MANAGED"\s*:\s*"false"/);
+  assert.match(exampleConfig, /"HLTV_API_BASE_URL"\s*:\s*"http:\/\/127\.0\.0\.1:8020"/);
+
+  assert.match(exampleReadme, /HLTV_UPSTREAM_MANAGED=false/);
+  assert.match(exampleReadme, /HLTV_API_BASE_URL/);
+  assert.match(exampleReadme, /hltv-api-fixed\/env\/bin\/python/);
+  assert.match(exampleReadme, /(fail\s*fast|无法连上|无法连接)/i);
+});
