@@ -166,10 +166,15 @@ dist/index.js
 
 ### 4.2 在 OpenCode 中手动注册 local MCP
 
-推荐手工编辑 `opencode.json` / `opencode.jsonc`：
+推荐手工编辑项目级 OpenCode 配置：
+
+- `opencode.json` / `opencode.jsonc`
+- 或 `.opencode/opencode.json` / `.opencode/opencode.jsonc`
 
 - 单文件模板：`docs/templates/opencode.jsonc`
 - 完整可复制示例：`examples/opencode-project/`
+
+> 实际以你本机 `opencode debug config` / `opencode mcp list --print-logs` 看到的加载路径为准。当前版本如果项目里没有 live 配置，往往仍会回退到全局配置。
 
 ```jsonc
 {
@@ -230,6 +235,29 @@ opencode mcp ls
 如果配置正确，你应该能看到：
 
 - `hltv_local`
+- 状态是 `connected` 或至少不是 `disabled`
+
+如果你想一键做本地排查，可以运行：
+
+```bash
+npm run doctor:opencode
+```
+
+或输出 JSON：
+
+```bash
+npm run doctor:opencode -- --json
+```
+
+这个 doctor 会重点检查：
+
+- 当前项目里有没有项目级 OpenCode 配置文件
+- `dist/index.js` 是否存在
+- 有效配置里的 `hltv_local.enabled` 是否为 `true`
+- MCP 启动路径是不是当前项目的 `dist/index.js`
+- `HLTV_API_BASE_URL` / `HLTV_API_FALLBACK_BASE_URL` 指向的上游是否可达
+
+它不会单独替代 `opencode debug config` / `opencode mcp list --print-logs`：如果你要确认“到底是哪一份配置真正生效”，仍然应该结合这两个 OpenCode 命令一起看。
 
 ---
 
@@ -480,15 +508,26 @@ WSL 场景下请注意：
 
 ### 7.3 WSL 下为什么 `hltv-mcp` 拉不起来，或者一直连不上上游？
 
-最常见的就是这两个原因：
+最常见的就是这三个原因：
 
-1. **本地 MCP 启动路径写成了 Windows 路径**
+1. **当前项目根本没有项目级配置文件，实际仍在吃全局配置**
+   - 这时你虽然是在项目目录里运行 OpenCode，但真正生效的可能还是 `~/.config/opencode/opencode.jsonc`
+   - 可以用 `opencode mcp list --print-logs` 看它到底加载了哪些配置文件
+   - 也可以直接跑 `npm run doctor:opencode`
+
+2. **本地 MCP 启动路径写成了 Windows 路径**
    - 例如在 WSL 里仍然写 `C:/.../dist/index.js`
    - 这会导致 OpenCode 无法正确拉起 `node dist/index.js`
-2. **上游 base URL 仍然指向 `127.0.0.1`，但 API 实际跑在 Windows 宿主机**
+3. **上游 base URL 仍然指向 `127.0.0.1`，但 API 实际跑在 Windows 宿主机**
    - 这时 WSL 里的 `127.0.0.1` 指向的是 WSL 自己，不一定是 Windows 上的服务
    - 当前版本会自动尝试 `/etc/resolv.conf` 里的 Windows host 地址
    - 如果仍失败，请手动设置 `HLTV_API_FALLBACK_BASE_URL`
+
+还有一个高频但很容易漏掉的问题：
+
+- `hltv_local.enabled` 仍然是 `false`
+- 这会让 OpenCode 列表里显示 `disabled`，即使 command path 已经改对了也不会真的连上
+- `npm run doctor:opencode` 也会直接把这个问题报出来
 
 另外，当前实现对 `HLTV_API_BASE_URL` 的 path prefix 也更友好了：
 
