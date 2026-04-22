@@ -1,0 +1,106 @@
+tags:
+  - News
+parameters:
+  - name: year
+    in: path
+    type: integer
+    description: Year for news (optional, defaults to current year)
+  - name: month
+    in: path
+    type: string
+    description: Month for news (optional, defaults to current month)
+  - name: limit
+    in: query
+    type: integer
+    required: false
+    minimum: 1
+    description: Positive integer page size for paginated mode.
+  - name: offset
+    in: query
+    type: integer
+    required: false
+    minimum: 0
+    description: Non-negative integer start index for paginated mode.
+responses:
+  200:
+    description: >
+      News articles. Returns the legacy array when no pagination query
+      parameters are provided. Returns a paginated object when `limit`
+      and/or `offset` is provided.
+    schema:
+      type: object
+      properties:
+        items:
+          type: array
+          description: News items for the current page.
+        total:
+          type: integer
+          description: Total number of news items available.
+        count:
+          type: integer
+          description: Number of items returned in this response.
+        limit:
+          type: integer
+          description: Requested page size.
+        offset:
+          type: integer
+          description: Requested start index.
+        has_more:
+          type: boolean
+          description: Whether more items are available.
+        next_offset:
+          type: integer
+          description: Next offset to request when `has_more` is true.
+        year:
+          type: integer
+          description: Archive year used for the request.
+        month:
+          type: string
+          description: Archive month used for the request.
+  500:
+    description: News scrape process failed
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: news_scrape_failed
+        reason:
+          type: string
+          example: process_failed
+        message:
+          type: string
+          example: Scrapy execution failed for the news archive scrape.
+        year:
+          type: integer
+          example: 2026
+        month:
+          type: string
+          example: April
+  502:
+    description: News scrape output/content validation failed
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: news_scrape_failed
+        reason:
+          type: string
+          description: Fetch or validation failure reason.
+          enum:
+            - empty_content
+            - missing_output
+            - browser_timeout
+            - challenge_detected
+            - fallback_failed
+          example: empty_content
+        message:
+          type: string
+          example: News scrape returned empty content for the requested archive period.
+        year:
+          type: integer
+          example: 2026
+        month:
+          type: string
+          example: April

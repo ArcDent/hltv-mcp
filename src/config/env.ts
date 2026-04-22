@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
+import net from "node:net";
 import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type SummaryMode = "template" | "raw";
 
@@ -8,6 +11,13 @@ export interface AppConfig {
   mcpServerVersion: string;
   hltvApiBaseUrl: string;
   hltvApiBaseUrls: string[];
+  managedUpstreamEnabled?: boolean;
+  managedUpstreamPythonPath?: string;
+  managedUpstreamWorkdir?: string;
+  managedUpstreamHost?: string;
+  managedUpstreamPort?: number;
+  managedUpstreamHealthPath?: string;
+  managedUpstreamStartTimeoutMs?: number;
   hltvApiTimeoutMs: number;
   defaultResultLimit: number;
   summaryMode: SummaryMode;
@@ -36,6 +46,24 @@ function readNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function readBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (!value) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 function readSummaryMode(value: string | undefined): SummaryMode {
   return value === "raw" ? "raw" : "template";
 }
@@ -59,6 +87,14 @@ function normalizeBaseUrl(value: string): string {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.length > 0)));
+}
+
+function normalizeHealthPath(value: string): string {
+  if (value.startsWith("/")) {
+    return value;
+  }
+
+  return `/${value}`;
 }
 
 function isLoopbackLikeHost(hostname: string): boolean {
@@ -132,14 +168,56 @@ function buildHltvApiBaseUrls(env: NodeJS.ProcessEnv): string[] {
   return uniqueStrings(candidates);
 }
 
+function buildManagedHltvApiBaseUrl(host: string, port: number): string {
+  const dialHost = resolveManagedDialHost(host);
+  const normalizedHost = net.isIP(dialHost) === 6 ? `[${dialHost}]` : dialHost;
+  return normalizeBaseUrl(`http://${normalizedHost}:${port}`);
+}
+
+function resolveManagedDialHost(host: string): string {
+  const normalized = host.trim().toLowerCase();
+
+  if (normalized === "0.0.0.0") {
+    return "127.0.0.1";
+  }
+
+  if (normalized === "::") {
+    return "::1";
+  }
+
+  return host;
+}
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const hltvApiBaseUrls = buildHltvApiBaseUrls(env);
+  const managedUpstreamEnabled = readBoolean(env.HLTV_UPSTREAM_MANAGED, true);
+  const managedUpstreamHost = readString(env.HLTV_UPSTREAM_HOST, "127.0.0.1");
+  const managedUpstreamPort = readNumber(env.HLTV_UPSTREAM_PORT, 18_020);
+  const managedUpstreamWorkdir = readString(env.HLTV_UPSTREAM_WORKDIR, path.join(repositoryRoot, "hltv-api-fixed"));
+  const managedUpstreamPythonPath = readString(
+    env.HLTV_UPSTREAM_PYTHON_PATH,
+    path.join(managedUpstreamWorkdir, "env", "bin", "python")
+  );
+  const managedUpstreamHealthPath = normalizeHealthPath(readString(env.HLTV_UPSTREAM_HEALTH_PATH, "/healthz"));
+  const managedUpstreamStartTimeoutMs = readNumber(env.HLTV_UPSTREAM_START_TIMEOUT_MS, 15_000);
+
+  const hltvApiBaseUrls = managedUpstreamEnabled
+    ? [buildManagedHltvApiBaseUrl(managedUpstreamHost, managedUpstreamPort)]
+    : buildHltvApiBaseUrls(env);
 
   return {
     mcpServerName: readString(env.MCP_SERVER_NAME, "hltv-mcp-service"),
     mcpServerVersion: readString(env.MCP_SERVER_VERSION, "0.3.0"),
     hltvApiBaseUrl: hltvApiBaseUrls[0] ?? normalizeBaseUrl("http://127.0.0.1:8020"),
     hltvApiBaseUrls,
+    managedUpstreamEnabled,
+    managedUpstreamPythonPath,
+    managedUpstreamWorkdir,
+    managedUpstreamHost,
+    managedUpstreamPort,
+    managedUpstreamHealthPath,
+    managedUpstreamStartTimeoutMs,
     hltvApiTimeoutMs: readNumber(env.HLTV_API_TIMEOUT_MS, 8_000),
     defaultResultLimit: readNumber(env.DEFAULT_RESULT_LIMIT, 5),
     summaryMode: readSummaryMode(env.SUMMARY_MODE),

@@ -14,18 +14,28 @@
 - `hltv_matches_upcoming`
 - `hltv_news_digest`
 
-上游默认依赖你**自己部署**的 `hltv-scraper-api`：
+上游默认由 MCP 在启动时**自动拉起（managed upstream）**：
+
+- `src/index.ts` 会在 stdio MCP 启动前先启动 `hltv-api-fixed/app.py`
+- 默认 Python 解释器路径是 `hltv-api-fixed/env/bin/python`
+- 如果 `hltv-api-fixed/env/bin/python` 不存在，服务会在启动阶段直接失败（fail fast）
+- 运行 `npm run start` 前，请先准备好 `hltv-api-fixed/env/bin/python`（或通过 `HLTV_UPSTREAM_PYTHON_PATH` override 覆盖解释器路径）
+- 当前实现不会自动创建 Python venv（do not auto-create）
+
+如果你要改回外部上游模式（自己部署 `hltv-scraper-api`），设置：
 
 ```env
+HLTV_UPSTREAM_MANAGED=false
 HLTV_API_BASE_URL=http://127.0.0.1:8020
 ```
 
-如果 MCP 跑在 **WSL**、而 `hltv-scraper-api` 跑在 **Windows 宿主机**：
+在外部上游模式下，如果 MCP 跑在 **WSL**、而 `hltv-scraper-api` 跑在 **Windows 宿主机**：
 
 - 现在代码会在 WSL 下对 `127.0.0.1` / `localhost` / `0.0.0.0` 自动额外尝试一个从 `/etc/resolv.conf` 推断出的 Windows host 地址；
 - 如果你的环境没有成功自动探测，可以显式设置：
 
 ```env
+HLTV_UPSTREAM_MANAGED=false
 HLTV_API_FALLBACK_BASE_URL=http://WINDOWS_HOST_IP:8020
 ```
 
@@ -56,6 +66,13 @@ npm install
 npm run build
 ```
 
+如果你使用默认 managed upstream，请先手动准备解释器（仓库不会自动创建 venv）：
+
+- 目标路径：`hltv-api-fixed/env/bin/python`
+- 或设置 `HLTV_UPSTREAM_PYTHON_PATH` 覆盖（override）到你已准备好的解释器路径
+
+未准备好解释器时，`npm run start` 会 fail fast。
+
 可选手动启动：
 
 ```bash
@@ -71,6 +88,14 @@ npm run start
 参考 `.env.example`，最常用的是：
 
 ```env
+# 默认 managed upstream（自动启动）
+HLTV_UPSTREAM_MANAGED=true
+HLTV_UPSTREAM_PORT=18020
+HLTV_UPSTREAM_HEALTH_PATH=/healthz
+HLTV_UPSTREAM_PYTHON_PATH=
+
+# 外部上游模式（手动部署 hltv-scraper-api）
+HLTV_UPSTREAM_MANAGED=false
 HLTV_API_BASE_URL=http://127.0.0.1:8020
 HLTV_API_FALLBACK_BASE_URL=
 HLTV_API_TIMEOUT_MS=8000
@@ -159,6 +184,7 @@ dist/index.js
       "enabled": true,
       "timeout": 10000,
       "environment": {
+        "HLTV_UPSTREAM_MANAGED": "false",
         "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
         // Optional for WSL when upstream runs on the Windows host:
         // "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
@@ -357,6 +383,7 @@ examples/opencode-project/
     "/absolute/path/to/hltv-mcp-service/dist/index.js"
   ],
   "env": {
+    "HLTV_UPSTREAM_MANAGED": "false",
     "HLTV_API_BASE_URL": "http://127.0.0.1:8020",
     "HLTV_API_FALLBACK_BASE_URL": "http://WINDOWS_HOST_IP:8020",
     "HLTV_API_TIMEOUT_MS": "8000",
