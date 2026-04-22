@@ -22,10 +22,16 @@ examples/opencode-project/
 
 把下面这些文件复制到你自己的 OpenCode 项目：
 
-- `examples/opencode-project/opencode.jsonc` -> `你的项目/opencode.jsonc`
+- `examples/opencode-project/opencode.jsonc` -> `你的项目/opencode.jsonc`（或 `你的项目/.opencode/opencode.jsonc`）
 - `examples/opencode-project/.opencode/commands/*.md` -> `你的项目/.opencode/commands/`
 
 如果你是在 **WSL** 中运行 OpenCode / MCP，请把示例里的 MCP 启动路径改成 **WSL/Linux 可访问路径**，例如 `/home/you/.../dist/index.js` 或 `/mnt/c/.../dist/index.js`，不要直接照抄 `C:/...`。
+
+如果你复制完以后仍然连不上，先检查这三件事：
+
+1. 当前项目级配置到底放在哪个路径下，并用 `opencode debug config` / `opencode mcp list --print-logs` 确认 OpenCode 实际加载的是哪份配置
+2. `hltv_local.enabled` 是否为 `true`
+3. `HLTV_API_BASE_URL` 指向的上游是否真的可达
 
 ## 默认前缀说明
 
