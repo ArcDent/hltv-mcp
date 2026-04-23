@@ -73,6 +73,32 @@ npm run build
 
 未准备好解释器时，`npm run start` 会 fail fast。
 
+一个最小可用的手动创建流程如下（以仓库根目录为当前目录）：
+
+```bash
+# Linux / WSL 常见前置依赖（如果你的系统已经有 venv 模块，可跳过）
+sudo apt update
+sudo apt install -y python3-venv
+
+# 创建仓库默认期望的虚拟环境路径
+python3 -m venv "./hltv-api-fixed/env"
+
+# 安装上游 scraper 依赖
+./hltv-api-fixed/env/bin/python -m pip install --upgrade pip
+./hltv-api-fixed/env/bin/pip install -r "./hltv-api-fixed/requirements.txt"
+
+# 可选验证：确认默认解释器路径已经存在
+ls "./hltv-api-fixed/env/bin/python"
+```
+
+如果你不想把虚拟环境建在 `hltv-api-fixed/env`，也可以自己准备一个 Python 环境，并在启动 MCP 时显式指定：
+
+```bash
+HLTV_UPSTREAM_PYTHON_PATH=/your/python/path npm run start
+```
+
+但要注意：这个解释器仍然需要先安装 `hltv-api-fixed/requirements.txt` 里的依赖。
+
 可选手动启动：
 
 ```bash
