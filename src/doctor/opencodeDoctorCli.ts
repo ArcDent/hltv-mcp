@@ -152,6 +152,16 @@ async function buildDoctorInput(projectRoot: string, mcpName: string): Promise<D
     expectedDistEntry,
     effectiveMcpName: mcpName,
     effectiveMcpConfig,
+    upstreamMode: loadedConfig?.managedUpstreamEnabled === false ? "external" : "managed",
+    managedUpstream: loadedConfig
+      ? {
+          pythonPath: loadedConfig.managedUpstreamPythonPath,
+          workdir: loadedConfig.managedUpstreamWorkdir,
+          host: loadedConfig.managedUpstreamHost,
+          port: loadedConfig.managedUpstreamPort,
+          healthPath: loadedConfig.managedUpstreamHealthPath
+        }
+      : undefined,
     upstreamBaseUrls,
     upstreamProbeResults
   };

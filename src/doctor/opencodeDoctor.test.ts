@@ -139,3 +139,49 @@ test("doctor accepts a dist entry that appears after node flags", () => {
   assert.equal(statusFor(report, "command_target"), "pass");
   assert.equal(report.ok, true);
 });
+
+test("managed-mode upstream failures recommend managed prerequisites, not ignored API base URL", () => {
+  const report = analyzeDoctorInput(
+    createInput({
+      upstreamMode: "managed",
+      managedUpstream: {
+        pythonPath: "/repo/hltv-api-fixed/env/bin/python",
+        workdir: "/repo/hltv-api-fixed",
+        host: "127.0.0.1",
+        port: 18020,
+        healthPath: "/healthz"
+      },
+      upstreamBaseUrls: ["http://127.0.0.1:18020/"],
+      upstreamProbeResults: [
+        {
+          url: "http://127.0.0.1:18020/api/v1/results/",
+          ok: false,
+          error: "connect ECONNREFUSED 127.0.0.1:18020"
+        }
+      ]
+    })
+  );
+
+  const recommendations = report.recommendations.join("\n");
+  assert.equal(statusFor(report, "upstream"), "fail");
+  assert.match(recommendations, /HLTV_UPSTREAM_PYTHON_PATH|hltv-api-fixed\/env\/bin\/python/);
+  assert.match(recommendations, /HLTV_UPSTREAM_MANAGED=false/);
+  assert.doesNotMatch(recommendations, /检查 `HLTV_API_BASE_URL` 是否可达/);
+});
+
+test("external-mode upstream failures keep API base URL guidance", () => {
+  const report = analyzeDoctorInput(
+    createInput({
+      upstreamMode: "external",
+      upstreamProbeResults: [
+        {
+          url: "http://127.0.0.1:8020/api/v1/results/",
+          ok: false,
+          error: "connect ECONNREFUSED 127.0.0.1:8020"
+        }
+      ]
+    })
+  );
+
+  assert.match(report.recommendations.join("\n"), /HLTV_API_BASE_URL/);
+});
