@@ -173,10 +173,10 @@ export class HltvFacade {
       const split = splitTeamMatches(normalizedMatches);
 
       const recent_results = normalizedQuery.include_recent_results
-        ? split.recent_results.slice(0, normalizedQuery.limit)
+        ? this.sortResultsByPlayedAtDesc(split.recent_results).slice(0, normalizedQuery.limit)
         : [];
       const upcoming_matches = normalizedQuery.include_upcoming
-        ? split.upcoming_matches.slice(0, normalizedQuery.limit)
+        ? this.sortUpcomingByScheduledAtAsc(split.upcoming_matches).slice(0, normalizedQuery.limit)
         : [];
       const notes = this.collectTeamRecentNotes(profile, normalizedMatches, recent_results, upcoming_matches);
 
@@ -237,9 +237,9 @@ export class HltvFacade {
           })
         : normalizePlayerProfile(playerDetail, resolvedEntity);
       const overview = normalizeOverview(playerOverview, playerDetail);
-      const recent_matches = normalizeMatches([playerDetail], profile.name)
-        .filter((item) => item.score || item.played_at)
-        .slice(0, normalizedQuery.limit);
+      const recent_matches = this.sortResultsByPlayedAtDesc(
+        normalizeMatches([playerDetail], profile.name).filter((item) => item.score || item.played_at)
+      ).slice(0, normalizedQuery.limit);
       const recent_highlights = collectRecentHighlights(playerDetail, playerOverview).slice(0, normalizedQuery.limit);
       const notes = this.collectPlayerRecentNotes(profile, overview, recent_highlights, recent_matches, inferredTeam?.name);
 
@@ -276,9 +276,8 @@ export class HltvFacade {
       const rawResults = await this.client.getRecentResults();
       const parsedItems = normalizeResults(rawResults);
       const windowedItems = this.applyTimeWindow(parsedItems, normalizedQuery.days, false);
-      const items = windowedItems
-        .filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event))
-        .slice(0, normalizedQuery.limit);
+      const filteredItems = windowedItems.filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event));
+      const items = this.sortResultsByPlayedAtDesc(filteredItems).slice(0, normalizedQuery.limit);
       const notes = this.collectMatchQueryNotes({
         parsedItems,
         windowedItems,
@@ -332,8 +331,9 @@ export class HltvFacade {
         ? this.filterMatchesToToday(parsedItems)
         : this.applyTimeWindow(parsedItems, normalizedQuery.days ?? 7, true);
       const filteredItems = windowedItems.filter((item) => this.matchesQuery(item, teamFilter, normalizedQuery.event));
+      const sortedItems = this.sortUpcomingByScheduledAtAsc(filteredItems);
       const items =
-        normalizedQuery.limit !== undefined ? filteredItems.slice(0, normalizedQuery.limit) : filteredItems;
+        normalizedQuery.limit !== undefined ? sortedItems.slice(0, normalizedQuery.limit) : sortedItems;
       const notes = this.collectMatchQueryNotes({
         parsedItems,
         windowedItems,
@@ -1192,6 +1192,33 @@ export class HltvFacade {
     });
   }
 
+  private sortResultsByPlayedAtDesc(matches: NormalizedMatch[]): NormalizedMatch[] {
+    return [...matches].sort((left, right) => this.compareMatchTime(left.played_at, right.played_at, false));
+  }
+
+  private sortUpcomingByScheduledAtAsc(matches: NormalizedMatch[]): NormalizedMatch[] {
+    return [...matches].sort((left, right) => this.compareMatchTime(left.scheduled_at, right.scheduled_at, true));
+  }
+
+  private compareMatchTime(leftValue: string | undefined, rightValue: string | undefined, ascending: boolean): number {
+    const left = dateTimeToTimestamp(leftValue);
+    const right = dateTimeToTimestamp(rightValue);
+
+    if (left === undefined && right === undefined) {
+      return 0;
+    }
+
+    if (left === undefined) {
+      return 1;
+    }
+
+    if (right === undefined) {
+      return -1;
+    }
+
+    return ascending ? left - right : right - left;
+  }
+
   private collectPlayerRecentNotes(
     profile: PlayerRecentData["profile"],
     overview: PlayerRecentData["overview"],
@@ -1373,15 +1400,26 @@ export class HltvFacade {
     }
 
     try {
-      const response = await compute();
-      this.cache.set(cacheKey, response, ttlSec);
-      return response;
+      return await this.cache.runOnce(cacheKey, async () => {
+        const cachedAfterWait = this.cache.get<ToolResponse<TData, TItem, TResolved>>(cacheKey);
+        if (cachedAfterWait) {
+          return this.cloneWithMeta(cachedAfterWait, {
+            cache_hit: true,
+            ttl_sec: ttlSec
+          });
+        }
+
+        const response = await compute();
+        this.cache.set(cacheKey, response, ttlSec);
+        return response;
+      });
     } catch (error) {
-      const stale = this.cache.getStale<ToolResponse<TData, TItem, TResolved>>(cacheKey);
+      const stale = this.cache.getStaleWithMeta<ToolResponse<TData, TItem, TResolved>>(cacheKey);
       if (stale) {
-        return this.cloneWithMeta(stale, {
+        return this.cloneWithMeta(stale.value, {
           cache_hit: true,
           stale: true,
+          stale_age_sec: stale.staleAgeSec,
           ttl_sec: ttlSec
         });
       }

@@ -13,6 +13,16 @@ export interface UpstreamProbeResult {
   error?: string;
 }
 
+export type UpstreamMode = "managed" | "external";
+
+export interface ManagedUpstreamDoctorConfig {
+  pythonPath?: string;
+  workdir?: string;
+  host?: string;
+  port?: number;
+  healthPath?: string;
+}
+
 export interface DoctorAnalysisInput {
   projectRoot: string;
   projectConfigPaths: string[];
@@ -21,6 +31,8 @@ export interface DoctorAnalysisInput {
   expectedDistEntry: string;
   effectiveMcpName: string;
   effectiveMcpConfig?: EffectiveMcpConfig;
+  upstreamMode?: UpstreamMode;
+  managedUpstream?: ManagedUpstreamDoctorConfig;
   upstreamBaseUrls: string[];
   upstreamProbeResults: UpstreamProbeResult[];
 }
@@ -63,6 +75,17 @@ function readCommandTarget(command: string[] | undefined): string | undefined {
 
 function hasPassingUpstreamProbe(results: UpstreamProbeResult[]): boolean {
   return results.some((result) => result.ok);
+}
+
+function describeManagedUpstream(config: ManagedUpstreamDoctorConfig | undefined): string {
+  const parts = [
+    config?.pythonPath ? `Python=${config.pythonPath}` : undefined,
+    config?.workdir ? `workdir=${config.workdir}` : undefined,
+    config?.host && config?.port ? `listen=${config.host}:${config.port}` : undefined,
+    config?.healthPath ? `health=${config.healthPath}` : undefined
+  ].filter((part): part is string => Boolean(part));
+
+  return parts.length ? `（当前 managed 配置：${parts.join("，")}）` : "";
 }
 
 export function analyzeDoctorInput(input: DoctorAnalysisInput): DoctorReport {
@@ -173,6 +196,8 @@ export function analyzeDoctorInput(input: DoctorAnalysisInput): DoctorReport {
     });
   }
 
+  const upstreamMode = input.upstreamMode ?? "external";
+
   if (input.upstreamBaseUrls.length === 0) {
     checks.push({
       id: "upstream",
@@ -180,7 +205,13 @@ export function analyzeDoctorInput(input: DoctorAnalysisInput): DoctorReport {
       status: "warn",
       summary: "没有可用的上游 base URL 可探测。"
     });
-    recommendations.push("确认 `HLTV_API_BASE_URL`（以及必要时的 `HLTV_API_FALLBACK_BASE_URL`）已经在 MCP environment 中配置。");
+    if (upstreamMode === "managed") {
+      recommendations.push(
+        `当前为 managed upstream 模式；确认 \`HLTV_UPSTREAM_PYTHON_PATH\` 指向可执行解释器，\`HLTV_UPSTREAM_WORKDIR\` 指向 hltv-api-fixed 目录，并检查端口/健康检查配置${describeManagedUpstream(input.managedUpstream)}。`
+      );
+    } else {
+      recommendations.push("确认 `HLTV_API_BASE_URL`（以及必要时的 `HLTV_API_FALLBACK_BASE_URL`）已经在 MCP environment 中配置。");
+    }
   } else if (!hasPassingUpstreamProbe(input.upstreamProbeResults)) {
     const sampleFailure = input.upstreamProbeResults[0];
     checks.push({
@@ -191,7 +222,13 @@ export function analyzeDoctorInput(input: DoctorAnalysisInput): DoctorReport {
         ? `所有上游探测都失败了；首个失败：${sampleFailure.url}${sampleFailure.error ? ` (${sampleFailure.error})` : ""}`
         : "所有上游探测都失败了。"
     });
-    recommendations.push("检查 `HLTV_API_BASE_URL` 是否可达；如果你在 WSL 中而上游跑在 Windows 宿主机，请再确认 `HLTV_API_FALLBACK_BASE_URL` 或 WSL 自动 fallback 是否生效。");
+    if (upstreamMode === "managed") {
+      recommendations.push(
+        `当前为 managed upstream 模式，\`HLTV_API_BASE_URL\` 会被忽略；请确认 \`HLTV_UPSTREAM_PYTHON_PATH\`（默认 hltv-api-fixed/env/bin/python）存在且可执行、\`HLTV_UPSTREAM_WORKDIR\` 指向 hltv-api-fixed、端口未被占用，并检查健康路径${describeManagedUpstream(input.managedUpstream)}。如果你想连接外部已运行的上游，请显式设置 \`HLTV_UPSTREAM_MANAGED=false\` 后再配置 \`HLTV_API_BASE_URL\`。`
+      );
+    } else {
+      recommendations.push("检查 `HLTV_API_BASE_URL` 是否可达；如果你在 WSL 中而上游跑在 Windows 宿主机，请再确认 `HLTV_API_FALLBACK_BASE_URL` 或 WSL 自动 fallback 是否生效。");
+    }
   } else {
     const successfulResult = input.upstreamProbeResults.find((result) => result.ok)!;
     checks.push({

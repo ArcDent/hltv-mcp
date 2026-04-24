@@ -149,6 +149,36 @@ test("news digest cache key uses effective pagination when offset is provided", 
   assert.equal(callCount, 1);
 });
 
+test("news digest deduplicates concurrent identical cache misses", async () => {
+  let callCount = 0;
+  let releaseFetch!: () => void;
+  const fetchStarted = new Promise<void>((resolve) => {
+    releaseFetch = resolve;
+  });
+  const facade = new HltvFacade(
+    createConfig(),
+    {
+      getNews: async () => {
+        callCount += 1;
+        await fetchStarted;
+        return createRawNews(10);
+      }
+    } as never,
+    new MemoryCache(),
+    {} as never,
+    {} as never
+  );
+
+  const first = facade.getNewsDigest({ limit: 5 });
+  const second = facade.getNewsDigest({ limit: 5 });
+  releaseFetch();
+  const [firstResponse, secondResponse] = await Promise.all([first, second]);
+
+  assert.equal(callCount, 1);
+  assert.equal(firstResponse.items?.length, 5);
+  assert.equal(secondResponse.items?.length, 5);
+});
+
 test("renderNews omits source, uses shanghai fallback, and shows continuation hint", () => {
   const renderer = new ChineseRenderer(new SummaryService("raw"));
   const response: ToolResponse<never, NewsItem> = {

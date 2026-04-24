@@ -30,6 +30,7 @@ export interface ToolMeta {
   partial: boolean;
   notes?: string[];
   stale?: boolean;
+  stale_age_sec?: number;
   pagination?: PaginationMeta;
 }
 
