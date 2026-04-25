@@ -177,29 +177,70 @@ test("renderRealtimeNews shows live fields and omits source", () => {
   assert.doesNotMatch(text, /【来源】/);
 });
 
-test("mcp server registers hltv_realtime_news", () => {
+test("mcp server registers and executes hltv_realtime_news", async () => {
+  const realtimeResponse = {
+    query: { limit: 25 },
+    items: [],
+    meta: {
+      source: "test",
+      fetched_at: new Date("2026-04-26T04:32:00.000Z").toISOString(),
+      timezone: "Asia/Shanghai",
+      cache_hit: false,
+      ttl_sec: 60,
+      schema_version: "test",
+      partial: false
+    },
+    error: null
+  };
+
+  let facadeQuery: unknown;
+  let rendererInput: unknown;
+
   const server = createMcpServer(
     createConfig(),
     {
-      getRealtimeNews: async () => ({
-        query: {},
-        items: [],
-        meta: {
-          source: "test",
-          fetched_at: new Date("2026-04-26T04:32:00.000Z").toISOString(),
-          timezone: "Asia/Shanghai",
-          cache_hit: false,
-          ttl_sec: 60,
-          schema_version: "test",
-          partial: false
-        },
-        error: null
-      })
+      getRealtimeNews: async (input: { limit?: number; page?: number; offset?: number }) => {
+        facadeQuery = input;
+        return realtimeResponse;
+      }
     } as never,
-    { renderRealtimeNews: () => "实时新闻" } as never
+    {
+      renderRealtimeNews: (response: unknown) => {
+        rendererInput = response;
+        return "实时新闻";
+      }
+    } as never
   );
 
-  assert.ok(server);
+  const tools = (
+    server as unknown as {
+      _registeredTools?: Record<
+        string,
+        {
+          callback?: (input: unknown) => Promise<unknown>;
+          handler?: (input: unknown) => Promise<unknown>;
+        }
+      >;
+    }
+  )._registeredTools;
+
+  const realtimeTool = tools?.hltv_realtime_news;
+  assert.ok(realtimeTool);
+
+  const invoke = realtimeTool.callback ?? realtimeTool.handler;
+  assert.ok(invoke);
+
+  const result = (await invoke({ limit: 25 })) as {
+    content?: Array<{ text?: string }>;
+    structuredContent?: { query?: Record<string, unknown> };
+    isError?: boolean;
+  };
+
+  assert.deepEqual(facadeQuery, { limit: 25 });
+  assert.equal(rendererInput, realtimeResponse);
+  assert.equal(result.isError, false);
+  assert.equal(result.content?.[0]?.text, "实时新闻");
+  assert.deepEqual(result.structuredContent?.query, { limit: 25 });
 });
 
 test("news command defaults to realtime news without tag", async () => {
