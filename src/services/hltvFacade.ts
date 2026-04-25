@@ -76,6 +76,33 @@ const PRIORITY_TEAM_QUERIES: TeamInferenceCandidate[] = [
   { id: 4411, name: "Ninjas in Pyjamas", slug: "ninjas-in-pyjamas", aliases: ["NIP"], appearances: 0 }
 ];
 
+const GENERIC_NEWS_TAGS = new Set([
+  "news",
+  "latest",
+  "latest news",
+  "today",
+  "today news",
+  "today's news",
+  "realtime news",
+  "real-time news",
+  "新闻",
+  "最新",
+  "最新新闻",
+  "今日",
+  "今日新闻",
+  "实时新闻"
+]);
+
+function normalizeArchiveNewsTag(tag: string | undefined): string | undefined {
+  const trimmed = tag?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const normalized = trimmed.toLowerCase().replace(/\s+/g, " ");
+  return GENERIC_NEWS_TAGS.has(normalized) ? undefined : trimmed;
+}
+
 export class HltvFacade {
   constructor(
     private readonly config: AppConfig,
@@ -370,7 +397,7 @@ export class HltvFacade {
       limit,
       offset: normalizedOffset,
       page: normalizedPage,
-      tag: query.tag,
+      tag: normalizeArchiveNewsTag(query.tag),
       year: query.year,
       month: query.month
     };

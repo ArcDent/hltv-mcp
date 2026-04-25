@@ -329,3 +329,52 @@ test("news command forwards explicit page and offset", async () => {
     offset: 25
   });
 });
+
+test("news digest treats generic news tag terms as omitted", async () => {
+  const facade = new HltvFacade(
+    createConfig(),
+    { getNews: async () => createRawNews(30) } as never,
+    new MemoryCache(),
+    {} as never,
+    {} as never
+  );
+
+  const generic = await facade.getNewsDigest({ limit: 10, tag: "news" });
+  assert.equal(generic.items?.length, 10);
+  assert.equal(generic.items?.[0]?.title, "Story 1");
+  assert.equal(generic.query.tag, undefined);
+  assert.equal(generic.meta.pagination?.total, 30);
+
+  const chineseGeneric = await facade.getNewsDigest({ limit: 10, tag: "今日新闻" });
+  assert.equal(chineseGeneric.items?.length, 10);
+  assert.equal(chineseGeneric.query.tag, undefined);
+  assert.equal(chineseGeneric.meta.pagination?.total, 30);
+});
+
+test("news digest still supports explicit archive topic filtering", async () => {
+  const facade = new HltvFacade(
+    createConfig(),
+    { getNews: async () => createRawNews(30) } as never,
+    new MemoryCache(),
+    {} as never,
+    {} as never
+  );
+
+  const response = await facade.getNewsDigest({ limit: 10, tag: "Rio" });
+
+  assert.equal(response.query.tag, "Rio");
+  assert.equal(response.items?.length, 10);
+  assert.equal(response.items?.[0]?.title, "Story 1");
+  assert.equal(response.items?.[1]?.title, "Story 3");
+  assert.equal(response.meta.pagination?.total, 15);
+});
+
+test("news templates forbid passing tag for generic news requests", () => {
+  const canonical = readProjectText("docs/templates/opencode.commands.news.md");
+  const example = readProjectText("examples/opencode-project/.opencode/commands/news.md");
+
+  for (const templateText of [canonical, example]) {
+    assert.match(templateText, /不要.*tag|不传.*tag|不得.*tag/);
+    assert.doesNotMatch(templateText, /尽量提取为 `tag`/);
+  }
+});

@@ -123,7 +123,7 @@ export function createMcpServer(
 
   server.tool(
     "hltv_news_digest",
-    "Get recent HLTV news with optional tag and time filters.",
+    "Get HLTV monthly archive news. Omit tag for the archive list; tag is only an explicit title/topic filter. Use hltv_realtime_news for latest/today/current news.",
     newsSchema,
     async (input) => {
       const response = await facade.getNewsDigest(input);

@@ -86,7 +86,13 @@ export const matchCommandParseSchema = {
 
 export const newsSchema = {
   limit: z.number().int().min(1).max(50).optional(),
-  tag: z.string().min(1).optional(),
+  tag: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional explicit archive title/topic filter. Do not pass generic words such as news, latest, today, 新闻, 今日新闻, or 最新新闻."
+    ),
   year: z.number().int().min(2000).max(3000).optional(),
   month: z.union([z.number().int().min(1).max(12), z.string().min(1)]).optional(),
   page: z.number().int().min(1).optional(),
