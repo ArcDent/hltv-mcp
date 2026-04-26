@@ -23,6 +23,8 @@ def has_archive_content_markers(html: str) -> bool:
     return (
         "a.newsline.article" in normalized
         or "newsline article" in normalized
+        or "featured-article-title" in normalized
+        or "today's news" in normalized
         or has_news_jsonld
     )
 

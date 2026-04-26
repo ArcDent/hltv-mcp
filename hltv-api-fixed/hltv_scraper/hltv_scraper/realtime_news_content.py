@@ -65,7 +65,7 @@ def _parse_article(node, response, section: str) -> dict[str, Any] | None:
     title = _extract_title(node)
     href = node.css("::attr(href)").get()
 
-    if not title and not href:
+    if not title:
         return None
 
     return {
@@ -113,6 +113,10 @@ def _extract_title(node) -> str | None:
         [
             ".newstext::text",
             ".newslineText::text",
+            ".featured-article-title::text",
+            ".article-title::text",
+            ".headline::text",
+            ".title::text",
             ".news-title::text",
             "h2::text",
             "h3::text",

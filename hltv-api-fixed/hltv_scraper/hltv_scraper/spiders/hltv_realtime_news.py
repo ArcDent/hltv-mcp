@@ -11,7 +11,7 @@ from .parsers import ParsersFactory as PF
 class HltvRealtimeNewsSpider(scrapy.Spider):
     name = "hltv_realtime_news"
     allowed_domains = ["www.hltv.org"]
-    news_url = "https://www.hltv.org/news"
+    news_url = "https://www.hltv.org/"
     start_urls = [news_url]
 
     def start_requests(self) -> Generator[Any, Any, None]:

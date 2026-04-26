@@ -202,6 +202,81 @@ def test_browser_fetcher_imports_from_scrapy_cwd_package_layout():
     assert result.stdout.strip() == "BrowserHTMLFetcher"
 
 
+def test_browser_fetcher_from_scrapy_cwd_rejects_generic_json_ld_readiness_only():
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[1]
+    scrapy_cwd = project_root / "hltv_scraper"
+    script = """
+from unittest.mock import Mock, patch
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.by import By
+from hltv_scraper.browser_fetcher import BrowserHTMLFetcher
+from hltv_scraper.errors import NewsScrapeFetchError
+
+url = 'https://www.hltv.org/'
+driver = Mock()
+driver.current_url = url
+driver.page_source = (
+    '<html><head>'
+    '<script type="application/ld+json">{}</script>'
+    '</head><body><h1>Access denied</h1></body></html>'
+)
+
+
+def _find_elements(by, selector):
+    if by == By.CSS_SELECTOR and selector == 'script[type="application/ld+json"]':
+        return [Mock()]
+    return []
+
+
+driver.find_elements.side_effect = _find_elements
+
+
+class _SingleCheckWait:
+    def __init__(self, current_driver):
+        self.current_driver = current_driver
+        self.condition_result = None
+
+    def until(self, condition):
+        self.condition_result = condition(self.current_driver)
+        if not self.condition_result:
+            raise TimeoutException('timed out')
+        return True
+
+
+wait = _SingleCheckWait(driver)
+fetcher = BrowserHTMLFetcher()
+try:
+    with patch.object(fetcher, '_build_driver', return_value=driver):
+        with patch.object(fetcher, '_build_wait', return_value=wait):
+            fetcher.fetch(url)
+except NewsScrapeFetchError as exc:
+    print(f'ERR:{exc.reason}:{wait.condition_result}')
+else:
+    print('OK')
+"""
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+        ],
+        cwd=scrapy_cwd,
+        env=dict(os.environ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ERR:browser_timeout:False"
+
+
 def test_challenge_fetcher_imports_from_scrapy_cwd_package_layout():
     import os
     import subprocess
@@ -419,6 +494,68 @@ else:
     assert result.stdout.strip() == "OK:True"
 
 
+def test_challenge_fetcher_from_scrapy_cwd_accepts_realtime_homepage_feature_card():
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[1]
+    scrapy_cwd = project_root / "hltv_scraper"
+    script = """
+import hltv_scraper.challenge_fetcher as challenge_fetcher
+from hltv_scraper.browser_fetcher import BrowserFetchResult
+from hltv_scraper.errors import NewsScrapeFetchError
+from hltv_scraper.realtime_news_content import extract_realtime_news
+
+
+def fake_http(url):
+    raise NewsScrapeFetchError("blocked", reason="challenge_detected")
+
+
+def fake_fetch(self, url):
+    return BrowserFetchResult(
+        final_url="https://www.hltv.org/",
+        html=(
+            "<html><body>"
+            "<h2>Today's news</h2>"
+            "<a class='featured-article' href='/news/43010/stat-check-mouz-go-anchorless'>"
+            "<div class='featured-article-title'>Stat Check: MOUZ go anchorless with another big bet on youth</div>"
+            "<p>siuhy has found another way to trust young riflers.</p>"
+            "</a>"
+            "</body></html>"
+        ),
+    )
+
+
+challenge_fetcher.fetch_news_archive_with_http_session = fake_http
+challenge_fetcher.BrowserHTMLFetcher.fetch = fake_fetch
+
+response = challenge_fetcher.fetch_hltv_page("https://www.hltv.org/")
+title = extract_realtime_news(response)[0].get("title")
+print(f"OK:{title}")
+"""
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+        ],
+        cwd=scrapy_cwd,
+        env=dict(os.environ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        result.stdout.strip()
+        == "OK:Stat Check: MOUZ go anchorless with another big bet on youth"
+    )
+
+
 from unittest.mock import Mock, patch
 
 import pytest
@@ -521,6 +658,110 @@ def test_browser_html_fetcher_succeeds_when_newsline_marker_is_present():
 
 
 test_browser_html_fetcher_succeeds_when_newsline_marker_is_present.BrowserHTMLFetcher = True
+
+
+def test_browser_html_fetcher_does_not_accept_generic_json_ld_without_news_links():
+    from selenium.common.exceptions import TimeoutException
+    from selenium.webdriver.common.by import By
+    from hltv_scraper.browser_fetcher import BrowserHTMLFetcher
+    from hltv_scraper.errors import NewsScrapeFetchError
+
+    url = "https://www.hltv.org/"
+    driver = Mock()
+    driver.current_url = url
+    driver.page_source = (
+        "<html><head>"
+        "<script type='application/ld+json'>{}</script>"
+        "</head><body><h1>Access denied</h1></body></html>"
+    )
+
+    def _find_elements(by, selector):
+        if by == By.CSS_SELECTOR and selector == 'script[type="application/ld+json"]':
+            return [Mock()]
+        return []
+
+    driver.find_elements.side_effect = _find_elements
+
+    class _SingleCheckWait:
+        def __init__(self, current_driver):
+            self.current_driver = current_driver
+            self.condition_result = None
+
+        def until(self, condition):
+            self.condition_result = condition(self.current_driver)
+            if not self.condition_result:
+                raise TimeoutException("timed out")
+            return True
+
+    wait = _SingleCheckWait(driver)
+    fetcher = BrowserHTMLFetcher()
+
+    with patch.object(fetcher, "_build_driver", return_value=driver):
+        with patch.object(fetcher, "_build_wait", return_value=wait):
+            with pytest.raises(NewsScrapeFetchError) as exc_info:
+                fetcher.fetch(url)
+
+    assert wait.condition_result is False
+    assert exc_info.value.reason == "browser_timeout"
+    driver.quit.assert_called_once()
+
+
+test_browser_html_fetcher_does_not_accept_generic_json_ld_without_news_links.BrowserHTMLFetcher = (
+    True
+)
+
+
+def test_browser_html_fetcher_succeeds_when_homepage_feature_news_link_is_present():
+    from selenium.common.exceptions import TimeoutException
+    from selenium.webdriver.common.by import By
+    from hltv_scraper.browser_fetcher import BrowserHTMLFetcher
+
+    url = "https://www.hltv.org/"
+    driver = Mock()
+    driver.current_url = url
+    driver.page_source = (
+        "<html><body>"
+        "<a class='featured-article' href='/news/43010/stat-check'>"
+        "<div class='featured-article-title'>Stat Check: MOUZ go anchorless with another big bet on youth</div>"
+        "</a></body></html>"
+    )
+
+    def _find_elements(by, selector):
+        if by != By.CSS_SELECTOR:
+            return []
+        if selector == "a[href*='/news/'] .featured-article-title":
+            return [Mock()]
+        return []
+
+    driver.find_elements.side_effect = _find_elements
+
+    class _SingleCheckWait:
+        def __init__(self, current_driver):
+            self.current_driver = current_driver
+            self.condition_result = None
+
+        def until(self, condition):
+            self.condition_result = condition(self.current_driver)
+            if not self.condition_result:
+                raise TimeoutException("timed out")
+            return True
+
+    wait = _SingleCheckWait(driver)
+    fetcher = BrowserHTMLFetcher()
+
+    with patch.object(fetcher, "_build_driver", return_value=driver):
+        with patch.object(fetcher, "_build_wait", return_value=wait):
+            result = fetcher.fetch(url)
+
+    assert wait.condition_result is True
+    assert result.final_url == url
+    assert "Stat Check: MOUZ" in result.html
+    driver.quit.assert_called_once()
+
+
+test_browser_html_fetcher_succeeds_when_homepage_feature_news_link_is_present.BrowserHTMLFetcher = (
+    True
+)
 
 
 def test_browser_html_fetcher_times_out_when_challenge_text_disappears_without_content_markers():
@@ -727,6 +968,83 @@ def test_fetch_hltv_page_returns_html_response_from_browser_result():
 
     assert response.url == "https://www.hltv.org/news/archive/2026/April"
     assert "newsline article" in response.text
+
+
+def test_fetch_hltv_page_accepts_realtime_homepage_feature_card_from_browser_result():
+    from hltv_scraper.challenge_fetcher import fetch_hltv_page
+    from hltv_scraper.browser_fetcher import BrowserFetchResult
+    from hltv_scraper.errors import NewsScrapeFetchError
+    from hltv_scraper.realtime_news_content import extract_realtime_news
+
+    browser_result = BrowserFetchResult(
+        final_url="https://www.hltv.org/",
+        html="""
+        <html>
+          <body>
+            <h2>Today's news</h2>
+            <a class="featured-article" href="/news/43010/stat-check-mouz-go-anchorless">
+              <div class="featured-article-title">Stat Check: MOUZ go anchorless with another big bet on youth</div>
+              <p>siuhy has found another way to trust young riflers.</p>
+            </a>
+          </body>
+        </html>
+        """,
+    )
+
+    with patch(
+        "hltv_scraper.challenge_fetcher.fetch_news_archive_with_http_session",
+        side_effect=NewsScrapeFetchError(
+            "HTTP session hit a challenge page.",
+            reason="challenge_detected",
+        ),
+    ):
+        with patch(
+            "hltv_scraper.challenge_fetcher.BrowserHTMLFetcher.fetch",
+            return_value=browser_result,
+        ):
+            response = fetch_hltv_page("https://www.hltv.org/")
+
+    assert response.url == "https://www.hltv.org/"
+    assert "Stat Check: MOUZ" in response.text
+    items = extract_realtime_news(response)
+    assert any(
+        item.get("title") == "Stat Check: MOUZ go anchorless with another big bet on youth"
+        for item in items
+    )
+
+
+def test_fetch_hltv_page_rejects_realtime_navigation_link_without_title_from_browser_result():
+    from hltv_scraper.challenge_fetcher import fetch_hltv_page
+    from hltv_scraper.browser_fetcher import BrowserFetchResult
+    from hltv_scraper.errors import NewsScrapeFetchError
+
+    browser_result = BrowserFetchResult(
+        final_url="https://www.hltv.org/",
+        html="""
+        <html>
+          <body>
+            <h2>Today's news</h2>
+            <a class="news-link" href="/news/archive"></a>
+          </body>
+        </html>
+        """,
+    )
+
+    with patch(
+        "hltv_scraper.challenge_fetcher.fetch_news_archive_with_http_session",
+        side_effect=NewsScrapeFetchError(
+            "HTTP session hit a challenge page.",
+            reason="challenge_detected",
+        ),
+    ):
+        with patch(
+            "hltv_scraper.challenge_fetcher.BrowserHTMLFetcher.fetch",
+            return_value=browser_result,
+        ):
+            with pytest.raises(NewsScrapeFetchError) as exc_info:
+                fetch_hltv_page("https://www.hltv.org/")
+
+    assert exc_info.value.reason == "challenge_detected"
 
 
 def test_fetch_hltv_page_has_html_response_return_annotation():
