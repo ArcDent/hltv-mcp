@@ -21,6 +21,18 @@
 - `hltv_news_digest` remains the monthly archive tool. Use it for explicit historical archive requests such as a year/month query. Generic words such as `news`, `latest`, `today`, `新闻`, `今日新闻`, and `最新新闻` are treated as no archive tag filter.
 - The `/news` OpenCode template calls `hltv_local_hltv_realtime_news` by default with `{ "limit": 25 }`; replies like “继续” should use the returned `next_offset` or `next_page`.
 
+---
+
+## 本次更新重点
+
+这次 ArcDev 更新主要集中在稳定性、诊断、输出一致性和本地验证链路：
+
+- **OpenCode doctor 诊断更准确**：现在会区分默认的 managed upstream 与外部 upstream；managed 模式下会提示检查 Python 解释器、上游工作目录、端口与 health path，不再误导用户只检查会被 managed 模式忽略的 `HLTV_API_BASE_URL`。
+- **内存缓存更稳**：缓存新增容量上限、过期后可用的 stale 保留窗口、`stale_age_sec` 元信息，并支持相同 cache key 的并发 miss 合并，减少重复上游请求。
+- **赛果 / 赛程输出顺序更确定**：近期赛果按 `played_at` 从新到旧排序，未来赛程按 `scheduled_at` 从早到晚排序；缺少时间的数据统一排在最后。
+- **验证链路更统一**：新增 `npm run verify`，按顺序执行 typecheck、build 和测试；GitHub Actions 会在 PR / `ArcDev` / `main` 推送时运行同一套验证。
+- **最后：新增根级 `npm test`**，统一运行 `src/**/*.test.ts`，不用再手动记每个测试入口。
+
 上游默认由 MCP 在启动时**自动拉起（managed upstream）**：
 
 - `src/index.ts` 会在 stdio MCP 启动前先启动 `hltv-api-fixed/app.py`
@@ -289,7 +301,8 @@ npm run doctor:opencode -- --json
 - `dist/index.js` 是否存在
 - 有效配置里的 `hltv_local.enabled` 是否为 `true`
 - MCP 启动路径是不是当前项目的 `dist/index.js`
-- `HLTV_API_BASE_URL` / `HLTV_API_FALLBACK_BASE_URL` 指向的上游是否可达
+- 默认 managed upstream 下的 Python 解释器、上游工作目录、端口与 health path 配置是否合理
+- 外部 upstream 模式下 `HLTV_API_BASE_URL` / `HLTV_API_FALLBACK_BASE_URL` 指向的上游是否可达
 
 它不会单独替代 `opencode debug config` / `opencode mcp list --print-logs`：如果你要确认“到底是哪一份配置真正生效”，仍然应该结合这两个 OpenCode 命令一起看。
 
@@ -553,7 +566,7 @@ WSL 场景下请注意：
 2. **本地 MCP 启动路径写成了 Windows 路径**
    - 例如在 WSL 里仍然写 `C:/.../dist/index.js`
    - 这会导致 OpenCode 无法正确拉起 `node dist/index.js`
-3. **上游 base URL 仍然指向 `127.0.0.1`，但 API 实际跑在 Windows 宿主机**
+3. **外部 upstream 模式下，上游 base URL 仍然指向 `127.0.0.1`，但 API 实际跑在 Windows 宿主机**
    - 这时 WSL 里的 `127.0.0.1` 指向的是 WSL 自己，不一定是 Windows 上的服务
    - 当前版本会自动尝试 `/etc/resolv.conf` 里的 Windows host 地址
    - 如果仍失败，请手动设置 `HLTV_API_FALLBACK_BASE_URL`
