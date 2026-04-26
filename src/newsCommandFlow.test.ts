@@ -245,12 +245,12 @@ test("renderNews uses 暂无匹配新闻 for empty pages", () => {
   assert.match(text, /【分页】当前 25-25 \/ 共 25|【分页】当前 0 条 \/ 共 25/);
 });
 
-test("news command defaults to 25 and docs mention continuation plus chinese titles", async () => {
-  let receivedLimit: number | undefined;
+test("news command defaults to realtime news and docs mention continuation plus chinese titles", async () => {
+  let receivedQuery: { limit?: number; page?: number; offset?: number; tag?: string } | undefined;
   const handlers = new CommandHandlers(
     {
-      getRealtimeNews: async (query: { limit?: number }) => {
-        receivedLimit = query.limit;
+      getRealtimeNews: async (query: { limit?: number; page?: number; offset?: number; tag?: string }) => {
+        receivedQuery = query;
         return {
           query,
           items: [],
@@ -259,7 +259,7 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
             fetched_at: new Date("2026-04-19T04:32:00.000Z").toISOString(),
             timezone: "Asia/Shanghai",
             cache_hit: false,
-            ttl_sec: 0,
+            ttl_sec: 60,
             schema_version: "test",
             partial: false
           },
@@ -274,17 +274,20 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
 
   await handlers.news();
 
-  assert.equal(receivedLimit, 25);
+  assert.deepEqual(receivedQuery, { limit: 25 });
+  assert.equal("tag" in (receivedQuery ?? {}), false);
   assert.match(COMMAND_REGISTRY.news.usage, /25|page|offset/i);
   assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /继续/);
   assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /中文标题/);
+  assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /hltv_local_hltv_realtime_news/);
   assert.doesNotMatch(readProjectText("docs/templates/opencode.commands.news.md"), /来源/);
 });
 
-test("news command forwards explicit page and offset", async () => {
+test("news command forwards realtime page and offset without tag", async () => {
   let receivedQuery:
     | {
         limit?: number;
+        tag?: string;
         page?: number;
         offset?: number;
       }
@@ -294,6 +297,7 @@ test("news command forwards explicit page and offset", async () => {
     {
       getRealtimeNews: async (query: {
         limit?: number;
+        tag?: string;
         page?: number;
         offset?: number;
       }) => {
@@ -306,7 +310,7 @@ test("news command forwards explicit page and offset", async () => {
             fetched_at: new Date("2026-04-19T04:32:00.000Z").toISOString(),
             timezone: "Asia/Shanghai",
             cache_hit: false,
-            ttl_sec: 0,
+            ttl_sec: 60,
             schema_version: "test",
             partial: false
           },
@@ -326,6 +330,7 @@ test("news command forwards explicit page and offset", async () => {
     page: 2,
     offset: 25
   });
+  assert.equal("tag" in (receivedQuery ?? {}), false);
 });
 
 test("news digest treats generic news tag terms as omitted", async () => {

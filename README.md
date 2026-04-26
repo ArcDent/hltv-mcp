@@ -14,6 +14,12 @@
 - `hltv_matches_upcoming`
 - `hltv_news_digest`
 
+### Realtime vs archive news
+
+- `hltv_realtime_news` is the default tool for latest/current/today news. It reads HLTV's live news feed through the bundled upstream route `GET /api/v1/news/realtime` and accepts only pagination fields: `limit`, `page`, and `offset`. Do not pass `tag` to this tool.
+- `hltv_news_digest` remains the monthly archive tool. Use it for explicit historical archive requests such as a year/month query. Generic words such as `news`, `latest`, `today`, `新闻`, `今日新闻`, and `最新新闻` are treated as no archive tag filter.
+- The `/news` OpenCode template calls `hltv_local_hltv_realtime_news` by default with `{ "limit": 25 }`; replies like “继续” should use the returned `next_offset` or `next_page`.
+
 上游默认由 MCP 在启动时**自动拉起（managed upstream）**：
 
 - `src/index.ts` 会在 stdio MCP 启动前先启动 `hltv-api-fixed/app.py`
