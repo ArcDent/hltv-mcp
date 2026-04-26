@@ -2,6 +2,7 @@ import type {
   NewsItem,
   NormalizedMatch,
   PlayerProfile,
+  RealtimeNewsItem,
   ResolvedPlayerEntity,
   ResolvedTeamEntity,
   TeamProfile
@@ -618,6 +619,38 @@ export function normalizeNews(rawItems: unknown[]): NewsItem[] {
         ),
         summary_hint: sanitizeHltvText(pickString(record, ["summary", "description", "teaser"])),
         tag: sanitizeHltvText(pickString(record, ["tag", "topic", "category"]))
+      };
+    })
+  );
+}
+
+export function normalizeRealtimeNews(rawItems: unknown[]): RealtimeNewsItem[] {
+  return compact(
+    rawItems.map((item) => {
+      const record = asRecord(item);
+      if (!record) {
+        return undefined;
+      }
+
+      const title = sanitizeHltvText(pickString(record, ["title", "headline", "name"]));
+      if (!title) {
+        return undefined;
+      }
+
+      const section = sanitizeHltvText(pickString(record, ["section", "group", "bucket"])) ?? "latest";
+
+      return {
+        section,
+        category: sanitizeHltvText(pickString(record, ["category", "tag", "topic", "country"])),
+        title,
+        relative_time: sanitizeHltvText(
+          pickString(record, ["relative_time", "relativeTime", "time_ago", "timeAgo", "published_relative"])
+        ),
+        comments: sanitizeHltvText(pickString(record, ["comments", "comment_count", "commentText"])),
+        link: sanitizeHltvText(pickString(record, ["link", "url"])),
+        summary_hint: sanitizeHltvText(
+          pickString(record, ["summary_hint", "summary", "description", "teaser"])
+        )
       };
     })
   );

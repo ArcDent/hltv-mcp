@@ -98,3 +98,15 @@ export const newsSchema = {
   page: z.number().int().min(1).optional(),
   offset: z.number().int().min(0).optional()
 };
+
+export const realtimeNewsSchema = {
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe("Optional realtime news result limit. Defaults to 25."),
+  page: z.number().int().min(1).optional().describe("Optional page number for realtime news pagination."),
+  offset: z.number().int().min(0).optional().describe("Optional zero-based offset for realtime news pagination.")
+};

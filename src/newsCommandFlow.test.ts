@@ -25,7 +25,8 @@ function createConfig(): AppConfig {
     playerRecentCacheTtlSec: 60,
     resultsCacheTtlSec: 60,
     matchesCacheTtlSec: 60,
-    newsCacheTtlSec: 60
+    newsCacheTtlSec: 60,
+    realtimeNewsCacheTtlSec: 60
   };
 }
 
@@ -248,7 +249,7 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
   let receivedLimit: number | undefined;
   const handlers = new CommandHandlers(
     {
-      getNewsDigest: async (query: { limit?: number }) => {
+      getRealtimeNews: async (query: { limit?: number }) => {
         receivedLimit = query.limit;
         return {
           query,
@@ -267,7 +268,7 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
       }
     } as never,
     {
-      renderNews: () => "news"
+      renderRealtimeNews: () => "news"
     } as never
   );
 
@@ -284,7 +285,6 @@ test("news command forwards explicit page and offset", async () => {
   let receivedQuery:
     | {
         limit?: number;
-        tag?: string;
         page?: number;
         offset?: number;
       }
@@ -292,9 +292,8 @@ test("news command forwards explicit page and offset", async () => {
 
   const handlers = new CommandHandlers(
     {
-      getNewsDigest: async (query: {
+      getRealtimeNews: async (query: {
         limit?: number;
-        tag?: string;
         page?: number;
         offset?: number;
       }) => {
@@ -316,15 +315,14 @@ test("news command forwards explicit page and offset", async () => {
       }
     } as never,
     {
-      renderNews: () => "news"
+      renderRealtimeNews: () => "news"
     } as never
   );
 
-  await handlers.news(25, "iem-rio", 2, 25);
+  await handlers.news(25, 2, 25);
 
   assert.deepEqual(receivedQuery, {
     limit: 25,
-    tag: "iem-rio",
     page: 2,
     offset: 25
   });

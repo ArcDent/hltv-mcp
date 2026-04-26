@@ -3,6 +3,7 @@ import type {
   NewsItem,
   NormalizedMatch,
   PlayerRecentData,
+  RealtimeNewsItem,
   ResolvedPlayerEntity,
   ResolvedTeamEntity,
   TeamRecentData
@@ -135,6 +136,80 @@ export class ChineseRenderer {
 
     return [
       "【新闻集合】",
+      "",
+      lines,
+      ...paginationLines,
+      "",
+      "【中文总结】",
+      summary,
+      "",
+      ...this.renderReasonSection(response),
+      `【更新时间】${formatDateTime(response.meta.fetched_at)}`
+    ].join("\n");
+  }
+
+  renderRealtimeNews(response: ToolResponse<never, RealtimeNewsItem>): string {
+    if (response.error) {
+      return this.renderError("实时新闻", response);
+    }
+
+    const summary = this.summaryService.summarizeRealtimeNews(response);
+    const pagination = response.meta.pagination;
+    const paginationRange = pagination
+      ? pagination.returned
+        ? `${pagination.offset + 1}-${pagination.offset + pagination.returned}`
+        : `0 条`
+      : null;
+
+    const sectionLabel = (section: string): string => {
+      const normalized = section.trim().toLowerCase();
+      if (normalized === "today") {
+        return "今日";
+      }
+
+      if (normalized === "yesterday") {
+        return "昨日";
+      }
+
+      if (normalized === "previous") {
+        return "更早";
+      }
+
+      if (normalized === "latest") {
+        return "最新";
+      }
+
+      return section;
+    };
+
+    const lines = response.items?.length
+      ? response.items
+          .map((item, index) => {
+            const parts = [
+              `${index + 1}. [${sectionLabel(item.section)}]`,
+              item.category ? `${item.category}` : undefined,
+              item.title,
+              item.relative_time ? `— ${item.relative_time}` : undefined,
+              item.comments ? `— ${item.comments}` : undefined,
+              item.summary_hint ? `— ${item.summary_hint}` : undefined
+            ].filter(Boolean);
+            return parts.join(" ");
+          })
+          .join("\n")
+      : "暂无匹配新闻";
+
+    const paginationLines = pagination
+      ? [
+          "",
+          `【分页】当前 ${paginationRange} / 共 ${pagination.total}`,
+          pagination.has_more
+            ? `可继续下一页：回复“继续”，或使用 page=${pagination.next_page} / offset=${pagination.next_offset}`
+            : "已到最后一页"
+        ]
+      : [];
+
+    return [
+      "【实时新闻】",
       "",
       lines,
       ...paginationLines,

@@ -27,6 +27,7 @@ export interface AppConfig {
   resultsCacheTtlSec: number;
   matchesCacheTtlSec: number;
   newsCacheTtlSec: number;
+  realtimeNewsCacheTtlSec: number;
 }
 
 function readString(value: string | undefined, fallback: string): string {
@@ -226,6 +227,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     playerRecentCacheTtlSec: readNumber(env.PLAYER_RECENT_CACHE_TTL_SEC, 300),
     resultsCacheTtlSec: readNumber(env.RESULTS_CACHE_TTL_SEC, 120),
     matchesCacheTtlSec: readNumber(env.MATCHES_CACHE_TTL_SEC, 60),
-    newsCacheTtlSec: readNumber(env.NEWS_CACHE_TTL_SEC, 180)
+    newsCacheTtlSec: readNumber(env.NEWS_CACHE_TTL_SEC, 180),
+    realtimeNewsCacheTtlSec: readNumber(env.REALTIME_NEWS_CACHE_TTL_SEC, 60)
   };
 }

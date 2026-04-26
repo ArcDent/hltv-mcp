@@ -36,7 +36,8 @@ function createConfig(): AppConfig {
     playerRecentCacheTtlSec: 60,
     resultsCacheTtlSec: 60,
     matchesCacheTtlSec: 60,
-    newsCacheTtlSec: 60
+    newsCacheTtlSec: 60,
+    realtimeNewsCacheTtlSec: 60
   };
 }
 
@@ -73,6 +74,7 @@ function createRenderer(): ChineseRenderer {
   return new ChineseRenderer({
     summarizeMatches: () => "summary",
     summarizeResults: () => "summary",
+    summarizeRealtimeNews: () => "summary",
     summarizeNews: () => "summary",
     summarizeTeam: () => "summary",
     summarizePlayer: () => "summary"
@@ -419,6 +421,7 @@ test("mcp server registers and executes the bare match tool", async () => {
         return createMatchResponse({ today_only: true });
       },
       getUpcomingMatches: async () => createMatchResponse({ today_only: false }),
+      getRealtimeNews: async () => ({ query: {}, items: [], meta: createMatchResponse({}).meta, error: null }),
       getNewsDigest: async () => ({ query: {}, items: [], meta: createMatchResponse({}).meta, error: null })
     } as unknown as HltvFacade,
     {
@@ -427,6 +430,7 @@ test("mcp server registers and executes the bare match tool", async () => {
       renderPlayerRecent: () => "player",
       renderResults: () => "results",
       renderMatches: () => "matches",
+      renderRealtimeNews: () => "realtime",
       renderNews: () => "news"
     } as never
   );

@@ -10,6 +10,7 @@ import {
   matchesTodaySchema,
   newsSchema,
   playerRecentSchema,
+  realtimeNewsSchema,
   resolveEntitySchema,
   resultsSchema,
   teamRecentSchema
@@ -118,6 +119,17 @@ export function createMcpServer(
     async (input) => {
       const response = await facade.getUpcomingMatches(input);
       return toolResult(renderer.renderMatches(response), response, Boolean(response.error));
+    }
+  );
+
+  server.tool(
+    "hltv_realtime_news",
+    "Get realtime/latest HLTV news from HLTV's live news feed. Use this for latest, today, current, or breaking news. This tool has no tag input.",
+    realtimeNewsSchema,
+    async (input) => {
+      const response = await facade.getRealtimeNews(input);
+      const rendererText = renderer.renderRealtimeNews(response);
+      return toolResult(rendererText, response, Boolean(response.error));
     }
   );
 

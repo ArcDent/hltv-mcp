@@ -59,6 +59,12 @@ export interface NewsDigestQuery {
   offset?: number;
 }
 
+export interface RealtimeNewsQuery {
+  limit?: number;
+  page?: number;
+  offset?: number;
+}
+
 export interface ResolvedTeamEntity {
   type: "team";
   id: number;
@@ -144,4 +150,14 @@ export interface NewsItem {
   published_at?: string;
   summary_hint?: string;
   tag?: string;
+}
+
+export interface RealtimeNewsItem {
+  section: string;
+  category?: string;
+  title: string;
+  relative_time?: string;
+  comments?: string;
+  link?: string;
+  summary_hint?: string;
 }

@@ -18,7 +18,8 @@ function createConfig(): AppConfig {
     playerRecentCacheTtlSec: 60,
     resultsCacheTtlSec: 60,
     matchesCacheTtlSec: 60,
-    newsCacheTtlSec: 60
+    newsCacheTtlSec: 60,
+    realtimeNewsCacheTtlSec: 60
   };
 }
 

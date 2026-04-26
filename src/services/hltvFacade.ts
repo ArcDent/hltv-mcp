@@ -8,6 +8,8 @@ import type {
   NormalizedMatch,
   PlayerRecentData,
   PlayerRecentQuery,
+  RealtimeNewsItem,
+  RealtimeNewsQuery,
   ResolveEntityQuery,
   ResolvedPlayerEntity,
   ResolvedTeamEntity,
@@ -34,6 +36,7 @@ import {
   collectRecentHighlights,
   normalizeMatches,
   normalizeNews,
+  normalizeRealtimeNews,
   normalizeOverview,
   normalizePlayerProfile,
   normalizeResults,
@@ -437,6 +440,54 @@ export class HltvFacade {
         query: normalizedQuery,
         items,
         meta: this.createMeta(this.config.newsCacheTtlSec, {
+          partial: notes.length > 0,
+          notes,
+          pagination: {
+            offset: normalizedQuery.offset,
+            limit: normalizedQuery.limit,
+            returned: items.length,
+            total,
+            has_more: hasMore,
+            current_page: currentPage,
+            next_offset: hasMore ? normalizedQuery.offset + normalizedQuery.limit : undefined,
+            next_page: hasMore ? currentPage + 1 : undefined
+          }
+        }),
+        error: null
+      };
+    });
+  }
+
+  async getRealtimeNews(query: RealtimeNewsQuery = {}): Promise<ToolResponse<never, RealtimeNewsItem>> {
+    const limit = query.limit ?? 25;
+    const normalizedOffset = query.offset ?? (query.page && query.page > 1 ? (query.page - 1) * limit : 0);
+    const normalizedPage = Math.floor(normalizedOffset / limit) + 1;
+
+    const normalizedQuery = {
+      limit,
+      offset: normalizedOffset,
+      page: normalizedPage
+    };
+    const cacheKey = `realtime_news:${JSON.stringify(normalizedQuery)}`;
+
+    return this.withCache(cacheKey, this.config.realtimeNewsCacheTtlSec, normalizedQuery, async () => {
+      const rawNews = await this.client.getRealtimeNews();
+      const normalizedItems = normalizeRealtimeNews(rawNews);
+
+      const items = normalizedItems.slice(normalizedQuery.offset, normalizedQuery.offset + normalizedQuery.limit);
+      const total = normalizedItems.length;
+      const hasMore = normalizedQuery.offset + items.length < total;
+      const currentPage = normalizedQuery.page;
+
+      const notes = this.collectRealtimeNewsNotes({
+        rawNews,
+        normalizedItems
+      });
+
+      return {
+        query: normalizedQuery,
+        items,
+        meta: this.createMeta(this.config.realtimeNewsCacheTtlSec, {
           partial: notes.length > 0,
           notes,
           pagination: {
@@ -1280,6 +1331,26 @@ export class HltvFacade {
     return notes;
   }
 
+  private collectRealtimeNewsNotes({
+    rawNews,
+    normalizedItems
+  }: {
+    rawNews: unknown[];
+    normalizedItems: RealtimeNewsItem[];
+  }): string[] {
+    const notes: string[] = [];
+
+    if (!rawNews.length) {
+      notes.push("上游实时新闻接口当前返回空结果；这不是本地渲染造成的。");
+    }
+
+    if (rawNews.length > 0 && !normalizedItems.length) {
+      notes.push("上游实时新闻接口返回了数据，但字段结构不包含已识别的标题字段。");
+    }
+
+    return notes;
+  }
+
   private collectNewsNotes({
     rawNews,
     normalizedItems,
@@ -1315,7 +1386,6 @@ export class HltvFacade {
 
     return notes;
   }
-
   private collectTeamRecentNotes(
     profile: TeamRecentData["profile"],
     normalizedMatches: NormalizedMatch[],
