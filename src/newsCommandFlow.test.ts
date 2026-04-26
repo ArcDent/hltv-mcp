@@ -25,7 +25,8 @@ function createConfig(): AppConfig {
     playerRecentCacheTtlSec: 60,
     resultsCacheTtlSec: 60,
     matchesCacheTtlSec: 60,
-    newsCacheTtlSec: 60
+    newsCacheTtlSec: 60,
+    realtimeNewsCacheTtlSec: 60
   };
 }
 
@@ -244,12 +245,12 @@ test("renderNews uses 暂无匹配新闻 for empty pages", () => {
   assert.match(text, /【分页】当前 25-25 \/ 共 25|【分页】当前 0 条 \/ 共 25/);
 });
 
-test("news command defaults to 25 and docs mention continuation plus chinese titles", async () => {
-  let receivedLimit: number | undefined;
+test("news command defaults to realtime news and docs mention continuation plus chinese titles", async () => {
+  let receivedQuery: { limit?: number; page?: number; offset?: number; tag?: string } | undefined;
   const handlers = new CommandHandlers(
     {
-      getNewsDigest: async (query: { limit?: number }) => {
-        receivedLimit = query.limit;
+      getRealtimeNews: async (query: { limit?: number; page?: number; offset?: number; tag?: string }) => {
+        receivedQuery = query;
         return {
           query,
           items: [],
@@ -258,7 +259,7 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
             fetched_at: new Date("2026-04-19T04:32:00.000Z").toISOString(),
             timezone: "Asia/Shanghai",
             cache_hit: false,
-            ttl_sec: 0,
+            ttl_sec: 60,
             schema_version: "test",
             partial: false
           },
@@ -267,20 +268,32 @@ test("news command defaults to 25 and docs mention continuation plus chinese tit
       }
     } as never,
     {
-      renderNews: () => "news"
+      renderRealtimeNews: () => "news"
     } as never
   );
 
   await handlers.news();
 
-  assert.equal(receivedLimit, 25);
-  assert.match(COMMAND_REGISTRY.news.usage, /25|page|offset/i);
+  assert.deepEqual(receivedQuery, { limit: 25 });
+  assert.equal("tag" in (receivedQuery ?? {}), false);
+  assert.match(COMMAND_REGISTRY.news.description, /25/);
+  assert.match(COMMAND_REGISTRY.news.usage, /page/i);
+  assert.match(COMMAND_REGISTRY.news.usage, /offset/i);
   assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /继续/);
   assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /中文标题/);
+  assert.match(readProjectText("docs/templates/opencode.commands.news.md"), /hltv_local_hltv_realtime_news/);
   assert.doesNotMatch(readProjectText("docs/templates/opencode.commands.news.md"), /来源/);
+
+  const readme = readProjectText("README.md");
+  assert.match(readme, /默认调用 `hltv_local_hltv_realtime_news\(\{ limit: 25 \}\)`/);
+  assert.match(readme, /hltv_local_hltv_news_digest/);
+  assert.match(readme, /next_page/);
+  assert.match(readme, /next_offset/);
+  assert.match(readme, /不展示数据源字段/);
+  assert.doesNotMatch(readme, /默认调用 `hltv_local_hltv_news_digest\(\{ limit: 25 \}\)`/);
 });
 
-test("news command forwards explicit page and offset", async () => {
+test("news command forwards realtime page and offset without tag", async () => {
   let receivedQuery:
     | {
         limit?: number;
@@ -292,7 +305,7 @@ test("news command forwards explicit page and offset", async () => {
 
   const handlers = new CommandHandlers(
     {
-      getNewsDigest: async (query: {
+      getRealtimeNews: async (query: {
         limit?: number;
         tag?: string;
         page?: number;
@@ -307,7 +320,7 @@ test("news command forwards explicit page and offset", async () => {
             fetched_at: new Date("2026-04-19T04:32:00.000Z").toISOString(),
             timezone: "Asia/Shanghai",
             cache_hit: false,
-            ttl_sec: 0,
+            ttl_sec: 60,
             schema_version: "test",
             partial: false
           },
@@ -316,16 +329,65 @@ test("news command forwards explicit page and offset", async () => {
       }
     } as never,
     {
-      renderNews: () => "news"
+      renderRealtimeNews: () => "news"
     } as never
   );
 
-  await handlers.news(25, "iem-rio", 2, 25);
+  await handlers.news(25, 2, 25);
 
   assert.deepEqual(receivedQuery, {
     limit: 25,
-    tag: "iem-rio",
     page: 2,
     offset: 25
   });
+  assert.equal("tag" in (receivedQuery ?? {}), false);
+});
+
+test("news digest treats generic news tag terms as omitted", async () => {
+  const facade = new HltvFacade(
+    createConfig(),
+    { getNews: async () => createRawNews(30) } as never,
+    new MemoryCache(),
+    {} as never,
+    {} as never
+  );
+
+  const generic = await facade.getNewsDigest({ limit: 10, tag: "news" });
+  assert.equal(generic.items?.length, 10);
+  assert.equal(generic.items?.[0]?.title, "Story 1");
+  assert.equal(generic.query.tag, undefined);
+  assert.equal(generic.meta.pagination?.total, 30);
+
+  const chineseGeneric = await facade.getNewsDigest({ limit: 10, tag: "今日新闻" });
+  assert.equal(chineseGeneric.items?.length, 10);
+  assert.equal(chineseGeneric.query.tag, undefined);
+  assert.equal(chineseGeneric.meta.pagination?.total, 30);
+});
+
+test("news digest still supports explicit archive topic filtering", async () => {
+  const facade = new HltvFacade(
+    createConfig(),
+    { getNews: async () => createRawNews(30) } as never,
+    new MemoryCache(),
+    {} as never,
+    {} as never
+  );
+
+  const response = await facade.getNewsDigest({ limit: 10, tag: "Rio" });
+
+  assert.equal(response.query.tag, "Rio");
+  assert.equal(response.items?.length, 10);
+  assert.equal(response.items?.[0]?.title, "Story 1");
+  assert.equal(response.items?.[1]?.title, "Story 3");
+  assert.equal(response.meta.pagination?.total, 15);
+});
+
+test("news templates forbid passing tag for generic news requests", () => {
+  const canonical = readProjectText("docs/templates/opencode.commands.news.md");
+  const example = readProjectText("examples/opencode-project/.opencode/commands/news.md");
+
+  for (const templateText of [canonical, example]) {
+    assert.match(templateText, /不要.*tag|不传.*tag|不得.*tag/);
+    assert.doesNotMatch(templateText, /尽量提取为 `tag`/);
+  }
 });

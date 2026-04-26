@@ -370,3 +370,80 @@ def test_hltv_scraper_get_news_propagates_fetch_error_reason():
             HLTVScraper.get_news(2026, "April")
 
     assert exc_info.value.reason == "challenge_detected"
+
+
+def test_hltv_scraper_get_realtime_news_uses_short_cache_and_strict_mode():
+    from hltv_scraper.cache_config import CACHE_HOURS_REALTIME_NEWS
+
+    mock_manager = Mock()
+    mock_manager.get_result.return_value = [
+        {"title": "Realtime item", "section": "today", "relative_time": "15 minutes ago"}
+    ]
+
+    with patch("hltv_scraper.HLTVScraper._get_manager", return_value=mock_manager):
+        result = HLTVScraper.get_realtime_news()
+
+    assert result == [
+        {"title": "Realtime item", "section": "today", "relative_time": "15 minutes ago"}
+    ]
+    mock_manager.execute.assert_called_once_with(
+        "hltv_realtime_news",
+        "news/realtime_news",
+        "-o data/news/realtime_news.json",
+        CACHE_HOURS_REALTIME_NEWS,
+        strict=True,
+    )
+    mock_manager.get_result.assert_called_once_with("news/realtime_news", strict=True)
+
+
+def test_hltv_scraper_get_realtime_news_raises_content_error_when_empty():
+    from hltv_scraper.errors import NewsScrapeContentError
+
+    mock_manager = Mock()
+    mock_manager.execute.return_value = None
+    mock_manager.get_result.return_value = []
+
+    with patch("hltv_scraper.HLTVScraper._get_manager", return_value=mock_manager):
+        with pytest.raises(NewsScrapeContentError) as exc_info:
+            HLTVScraper.get_realtime_news()
+
+    assert exc_info.value.reason == "empty_content"
+    assert str(exc_info.value) == "Realtime news scrape returned empty content."
+
+
+def test_hltv_realtime_news_spider_fetches_live_news_page():
+    from hltv_scraper.hltv_scraper.spiders.hltv_realtime_news import HltvRealtimeNewsSpider
+
+    response = HtmlResponse(
+        url="https://www.hltv.org/news",
+        request=Request(url="https://www.hltv.org/news"),
+        body=(
+            b"<html><body><h2>Today's news</h2>"
+            b"<a class='newsline article' href='/news/1/live'>"
+            b"<div class='newstext'>Live title</div>"
+            b"<div class='newsrecent'>15 minutes ago</div>"
+            b"</a></body></html>"
+        ),
+        encoding="utf-8",
+    )
+
+    spider = HltvRealtimeNewsSpider()
+
+    with patch(
+        "hltv_scraper.hltv_scraper.spiders.hltv_realtime_news.fetch_hltv_page",
+        return_value=response,
+    ) as mock_fetch:
+        items = list(spider.start_requests())
+
+    mock_fetch.assert_called_once_with("https://www.hltv.org/news")
+    assert items == [
+        {
+            "section": "today",
+            "category": None,
+            "title": "Live title",
+            "relative_time": "15 minutes ago",
+            "comments": None,
+            "link": "https://www.hltv.org/news/1/live",
+            "summary_hint": None,
+        }
+    ]

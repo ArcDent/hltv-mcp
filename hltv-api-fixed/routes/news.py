@@ -13,6 +13,44 @@ from hltv_scraper.errors import (
 news_bp = Blueprint("news", __name__, url_prefix="/api/v1/news")
 
 
+@news_bp.route("/realtime")
+def realtime_news() -> Response | tuple[Response, int]:
+    """Get realtime/latest news from HLTV's live news feed."""
+    try:
+        data = HLTVScraper.get_realtime_news()
+        return jsonify(data)
+    except NewsScrapeProcessError as e:
+        return (
+            jsonify(
+                {
+                    "error": "news_scrape_failed",
+                    "reason": e.reason,
+                    "message": str(e),
+                    "scope": "realtime",
+                }
+            ),
+            500,
+        )
+    except (
+        NewsScrapeOutputError,
+        NewsScrapeContentError,
+        NewsScrapeFetchError,
+    ) as e:
+        return (
+            jsonify(
+                {
+                    "error": "news_scrape_failed",
+                    "reason": e.reason,
+                    "message": str(e),
+                    "scope": "realtime",
+                }
+            ),
+            502,
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @news_bp.route("", defaults={"year": None, "month": None})
 @news_bp.route("/<int:year>/<string:month>/")
 @swag_from("../swagger_specs/news_list.yml")

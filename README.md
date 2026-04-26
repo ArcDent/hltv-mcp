@@ -12,7 +12,14 @@
 - `hltv_player_recent`
 - `hltv_results_recent`
 - `hltv_matches_upcoming`
+- `hltv_realtime_news`
 - `hltv_news_digest`
+
+### Realtime vs archive news
+
+- `hltv_realtime_news` is the default tool for latest/current/today news. It reads HLTV's live news feed through the bundled upstream route `GET /api/v1/news/realtime` and accepts only pagination fields: `limit`, `page`, and `offset`. Do not pass `tag` to this tool.
+- `hltv_news_digest` remains the monthly archive tool. Use it for explicit historical archive requests such as a year/month query. Generic words such as `news`, `latest`, `today`, `新闻`, `今日新闻`, and `最新新闻` are treated as no archive tag filter.
+- The `/news` OpenCode template calls `hltv_local_hltv_realtime_news` by default with `{ "limit": 25 }`; replies like “继续” should use the returned `next_offset` or `next_page`.
 
 ---
 
@@ -254,6 +261,7 @@ dist/index.js
   - `hltv_local_hltv_player_recent`
   - `hltv_local_hltv_results_recent`
   - `hltv_local_hltv_matches_upcoming`
+  - `hltv_local_hltv_realtime_news`
   - `hltv_local_hltv_news_digest`
 
 ---
@@ -417,7 +425,8 @@ examples/opencode-project/
 
 当前 `/news` 模板约定：
 
-- 默认调用 `hltv_local_hltv_news_digest({ limit: 25 })`
+- 默认调用 `hltv_local_hltv_realtime_news({ limit: 25 })`
+- 如果是明确的归档/月度历史查询（如“归档新闻”“某年某月新闻”），改用 `hltv_local_hltv_news_digest`
 - 支持根据上一轮返回的分页元信息继续读取下一批（如 `next_page` / `next_offset`）
 - 最终 slash-command 输出默认不展示数据源字段，可由助手基于英文原标题补充中文标题；MCP 工具原始结果仍以英文标题为准
 

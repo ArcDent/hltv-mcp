@@ -4,6 +4,7 @@ import type {
   NewsItem,
   NormalizedMatch,
   PlayerRecentData,
+  RealtimeNewsItem,
   ResolvedPlayerEntity,
   ResolvedTeamEntity,
   TeamRecentData
@@ -111,5 +112,21 @@ export class SummaryService {
     const focus = response.items.slice(0, 3).map((item) => item.title).join("；");
     const paginationHint = response.meta.pagination?.has_more ? "如需下一批结果，可继续翻页。" : "当前已展示到可用结果末尾。";
     return `当前这批新闻重点集中在：${focus}。${paginationHint} 如需更细粒度分析，可继续增加 tag 或时间范围过滤。`;
+  }
+
+  summarizeRealtimeNews(response: ToolResponse<never, RealtimeNewsItem>): string {
+    if (this.mode === "raw") {
+      return "已启用 raw 模式，当前未生成自然语言摘要。";
+    }
+
+    if (response.error || !response.items?.length) {
+      return `当前无法生成实时新闻摘要，请参考下方列表。${this.reasonHint(response)}`;
+    }
+
+    const focus = response.items.slice(0, 3).map((item) => item.title).join("；");
+    const paginationHint = response.meta.pagination?.has_more
+      ? `如需下一批实时新闻，可继续翻页（page=${response.meta.pagination.next_page} / offset=${response.meta.pagination.next_offset}）。`
+      : "当前已展示到可用结果末尾。";
+    return `当前这批实时新闻重点集中在：${focus}。${paginationHint}`;
   }
 }

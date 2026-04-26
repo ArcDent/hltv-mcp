@@ -63,6 +63,7 @@ hltv_local
 - `hltv_local_hltv_player_recent`
 - `hltv_local_hltv_results_recent`
 - `hltv_local_hltv_matches_upcoming`
+- `hltv_local_hltv_realtime_news`
 - `hltv_local_hltv_news_digest`
 
 补充：示例里的 `/match` 模板现在只支持无参数，并且只会调用 `hltv_local_hltv_matches_today({})`；如果你要按队伍或赛事筛未来比赛，请直接调用 `hltv_local_hltv_matches_upcoming`。

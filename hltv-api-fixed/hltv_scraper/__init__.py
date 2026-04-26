@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime
 
 from .spider_manager import SpiderManager
@@ -14,6 +14,7 @@ from .cache_config import (
     CACHE_HOURS_TEAM_MATCHES,
     CACHE_HOURS_BIG_RESULTS,
     CACHE_HOURS_PLAYER_STATS,
+    CACHE_HOURS_REALTIME_NEWS,
 )
 
 
@@ -148,6 +149,20 @@ class HLTVScraper:
             "year": year,
             "month": month,
         }
+
+    @staticmethod
+    def get_realtime_news() -> List[Dict[str, Any]]:
+        manager = HLTVScraper._get_manager()
+        name = "hltv_realtime_news"
+        path = "news/realtime_news"
+        args = f"-o data/{path}.json"
+        manager.execute(name, path, args, CACHE_HOURS_REALTIME_NEWS, strict=True)
+        data = manager.get_result(path, strict=True)
+
+        if isinstance(data, list) and len(data) == 0:
+            raise NewsScrapeContentError("Realtime news scrape returned empty content.")
+
+        return data
 
     @staticmethod
     def search_player(name: str) -> Dict[str, Any]:

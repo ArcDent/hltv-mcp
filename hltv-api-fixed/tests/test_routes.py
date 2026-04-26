@@ -337,6 +337,57 @@ class TestRoutesEndpoints:
                     "month": "April",
                 }
 
+    def test_realtime_news_endpoint(self, client, app):
+        """Test realtime news endpoint."""
+        mock_data = [
+            {
+                "section": "today",
+                "category": "Portugal",
+                "title": "BCG Masters Championship 2 to be held in Vila Nova de Gaia",
+                "relative_time": "15 minutes ago",
+                "comments": "7 comments",
+                "link": "https://www.hltv.org/news/43001/example",
+                "summary_hint": None,
+            }
+        ]
+
+        with app.app_context():
+            with patch(
+                "routes.news.HLTVScraper.get_realtime_news",
+                return_value=mock_data,
+                create=True,
+            ) as mock_get_realtime_news:
+                response = client.get("/api/v1/news/realtime")
+
+        mock_get_realtime_news.assert_called_once_with()
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data == mock_data
+
+    def test_realtime_news_endpoint_content_failure_contract(self, client, app):
+        """Test realtime news endpoint error contract for empty content failures."""
+        from hltv_scraper.errors import NewsScrapeContentError
+
+        with app.app_context():
+            with patch(
+                "routes.news.HLTVScraper.get_realtime_news",
+                side_effect=NewsScrapeContentError(
+                    "Realtime news scrape returned empty content.",
+                    reason="empty_content",
+                ),
+                create=True,
+            ):
+                response = client.get("/api/v1/news/realtime")
+
+        assert response.status_code == 502
+        data = json.loads(response.data)
+        assert data == {
+            "error": "news_scrape_failed",
+            "reason": "empty_content",
+            "message": "Realtime news scrape returned empty content.",
+            "scope": "realtime",
+        }
+
     def test_results_endpoint(self, client, app):
         """Test results endpoint."""
         mock_data = {

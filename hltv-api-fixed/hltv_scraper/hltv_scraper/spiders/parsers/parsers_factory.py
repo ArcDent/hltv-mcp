@@ -8,6 +8,7 @@ from .match_team import MatchTeamParser
 from .match_teams_box import MatchTeamsBoxParser
 from .table_stats import TableStatsParser
 from .news import NewsParser
+from .realtime_news import RealtimeNewsParser
 from .player_profile import PlayerProfileParser
 from .player_profile_link import PlayerProfileLinkParser
 from .players_profile import PlayersProfileParser
@@ -42,6 +43,8 @@ class ParsersFactory:
             return TableStatsParser()
         elif parser_name == "news":
             return NewsParser()
+        elif parser_name == "realtime_news":
+            return RealtimeNewsParser()
         elif parser_name == "player_profile":
             return PlayerProfileParser()
         elif parser_name == "player_profile_link":

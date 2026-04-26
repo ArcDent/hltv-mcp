@@ -94,6 +94,11 @@ export class HltvApiClient {
     return ensureArray(payload);
   }
 
+  async getRealtimeNews(): Promise<unknown[]> {
+    const payload = await this.requestJson("/api/v1/news/realtime");
+    return ensureArray(payload);
+  }
+
   buildSlug(rawName: string | undefined, fallbackId: number): string {
     return rawName ? slugify(rawName) : String(fallbackId);
   }
