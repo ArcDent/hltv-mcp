@@ -5,6 +5,7 @@ from .errors import NewsScrapeFetchError
 from .news_content import extract_news_articles
 from .news_http_fetcher import fetch_news_archive_with_http_session
 from .news_page_detection import is_blocked_archive_page
+from .realtime_news_content import extract_realtime_news
 from .response_factory import build_html_response
 
 
@@ -13,13 +14,13 @@ def _validate_candidate(
 ) -> NewsScrapeFetchError | None:
     if is_blocked_archive_page(response.text):
         return NewsScrapeFetchError(
-            f"{source} reached a challenge page instead of the news archive page.",
+            f"{source} reached a challenge page instead of the HLTV news page.",
             reason="challenge_detected",
         )
 
-    if not extract_news_articles(response):
+    if not extract_news_articles(response) and not extract_realtime_news(response):
         return NewsScrapeFetchError(
-            f"{source} did not return parseable news archive content.",
+            f"{source} did not return parseable HLTV news content.",
             reason="challenge_detected",
         )
 
@@ -58,6 +59,6 @@ def fetch_hltv_page(url: str) -> HtmlResponse:
         raise last_error
 
     raise NewsScrapeFetchError(
-        "Unable to fetch parseable news archive content.",
+        "Unable to fetch parseable HLTV news content.",
         reason="challenge_detected",
     )

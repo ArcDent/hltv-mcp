@@ -5,11 +5,24 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from .browser_config import BrowserRuntimeConfig, get_browser_runtime_config
 from .errors import NewsScrapeFetchError
+
+
+NEWS_CONTENT_SELECTORS = (
+    "a.newsline.article",
+    "a[href*='/news/'] .newstext",
+    "a[href*='/news/'] .newslineText",
+    "a[href*='/news/'] .featured-article-title",
+    "a[href*='/news/'] .article-title",
+    "a[href*='/news/'] .news-title",
+    "a[href*='/news/'] .headline",
+    "a[href*='/news/'] h2",
+    "a[href*='/news/'] h3",
+    "a[href*='/news/'] h4",
+)
 
 
 @dataclass(frozen=True)
@@ -49,19 +62,13 @@ class BrowserHTMLFetcher:
         return WebDriverWait(driver, self.config.timeout_seconds)
 
     def _wait_until_ready(self, driver, wait) -> None:
-        wait.until(
-            lambda current_driver: (
-                len(current_driver.find_elements(By.CSS_SELECTOR, "a.newsline.article"))
-                > 0
-                or len(
-                    current_driver.find_elements(
-                        By.CSS_SELECTOR,
-                        'script[type="application/ld+json"]',
-                    )
-                )
-                > 0
-            )
-        )
+        wait.until(lambda current_driver: self._has_news_content(current_driver))
+
+    def _has_news_content(self, driver) -> bool:
+        for selector in NEWS_CONTENT_SELECTORS:
+            if driver.find_elements(By.CSS_SELECTOR, selector):
+                return True
+        return False
 
     def fetch(self, url: str) -> BrowserFetchResult:
         try:

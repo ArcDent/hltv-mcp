@@ -411,12 +411,12 @@ def test_hltv_scraper_get_realtime_news_raises_content_error_when_empty():
     assert str(exc_info.value) == "Realtime news scrape returned empty content."
 
 
-def test_hltv_realtime_news_spider_fetches_live_news_page():
+def test_hltv_realtime_news_spider_fetches_homepage_live_news_page():
     from hltv_scraper.hltv_scraper.spiders.hltv_realtime_news import HltvRealtimeNewsSpider
 
     response = HtmlResponse(
-        url="https://www.hltv.org/news",
-        request=Request(url="https://www.hltv.org/news"),
+        url="https://www.hltv.org/",
+        request=Request(url="https://www.hltv.org/"),
         body=(
             b"<html><body><h2>Today's news</h2>"
             b"<a class='newsline article' href='/news/1/live'>"
@@ -435,7 +435,7 @@ def test_hltv_realtime_news_spider_fetches_live_news_page():
     ) as mock_fetch:
         items = list(spider.start_requests())
 
-    mock_fetch.assert_called_once_with("https://www.hltv.org/news")
+    mock_fetch.assert_called_once_with("https://www.hltv.org/")
     assert items == [
         {
             "section": "today",
